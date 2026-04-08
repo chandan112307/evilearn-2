@@ -16,6 +16,7 @@ class Settings:
     LLM_API_KEY: str = os.environ.get("LLM_API_KEY", "")
     LLM_MODEL: str = os.environ.get("LLM_MODEL", "llama3-8b-8192")
     LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "groq")  # groq or openai
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
 
     # Retrieval
     TOP_K_RESULTS: int = int(os.environ.get("TOP_K_RESULTS", "5"))

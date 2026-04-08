@@ -7,6 +7,14 @@ performs its single responsibility, and writes ONLY its assigned fields.
 Pipeline order (NON-NEGOTIABLE):
     START → planner → claim_extractor → retriever → verifier → explainer → END
 
+Strict typing:
+    All data flowing through state uses Pydantic models from schemas.py.
+    No untyped dicts in the core data flow.
+
+Embedding:
+    Embeddings are generated via EmbeddingService (LLM API).
+    ChromaDB is used ONLY for storage and similarity search.
+
 Tech stack: LangGraph StateGraph + LLM API (Groq/OpenAI) — nothing else.
 """
 
@@ -18,26 +26,40 @@ from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, START, END
 
+from ..schemas import (
+    ClaimItem,
+    EvidenceItem,
+    EvidenceChunk,
+    VerificationResult,
+    FinalClaimResult,
+)
+
 
 # ---------------------------------------------------------------------------
 # Shared State — every node reads from / writes to this TypedDict
 # ---------------------------------------------------------------------------
 
 class PipelineState(TypedDict):
-    """Shared state flowing through every node in the LangGraph pipeline."""
+    """Shared state flowing through every node in the LangGraph pipeline.
+
+    Dependencies are injected once before graph.invoke() and never mutated.
+    Pipeline data fields are each written by exactly one node.
+    All data uses strict Pydantic models — no untyped dicts.
+    """
 
     # Injected dependencies (set once before graph.invoke, never mutated by nodes)
     _vector_store: object
     _llm_client: object
+    _embedding_service: object
 
     # Pipeline data (each field written by exactly one node)
     raw_input: str
-    input_type: str               # written by planner
-    pipeline_decision: str        # written by planner
-    claims: list[dict]            # written by claim_extractor
-    evidence_map: dict            # written by retriever
-    verification_results: list[dict]  # written by verifier
-    final_results: list[dict]     # written by explainer
+    input_type: str                          # written by planner
+    pipeline_decision: str                   # written by planner
+    claims: list[dict]                       # written by claim_extractor (ClaimItem dicts)
+    evidence_map: dict                       # written by retriever (claim_id → list[EvidenceChunk dicts])
+    verification_results: list[dict]         # written by verifier (VerificationResult dicts)
+    final_results: list[dict]                # written by explainer (FinalClaimResult dicts)
     error: Optional[str]
 
 
@@ -106,9 +128,10 @@ def claim_extractor_node(state: PipelineState) -> dict:
     """Extract atomic factual claims from user input.
 
     Uses LLM API when available, falls back to rule-based sentence splitting.
+    Output is validated via ClaimItem Pydantic model.
 
     Reads: raw_input, input_type, _llm_client
-    Writes: claims
+    Writes: claims (list of ClaimItem dicts)
     """
     text = state["raw_input"].strip()
     input_type = state["input_type"]
@@ -139,10 +162,14 @@ def claim_extractor_node(state: PipelineState) -> dict:
             json_match = re.search(r'\[.*\]', content, re.DOTALL)
             if json_match:
                 claims_list = json.loads(json_match.group())
-                claims = [
-                    {"claim_id": str(uuid.uuid4()), "claim_text": c.strip()}
-                    for c in claims_list if c.strip()
-                ]
+                claims = []
+                for c in claims_list:
+                    if isinstance(c, str) and c.strip():
+                        item = ClaimItem(
+                            claim_id=str(uuid.uuid4()),
+                            claim_text=c.strip(),
+                        )
+                        claims.append(item.model_dump())
                 return {"claims": claims}
         except Exception:
             pass  # Fall through to rule-based extraction
@@ -156,10 +183,11 @@ def claim_extractor_node(state: PipelineState) -> dict:
             continue
         if sentence.endswith("?"):
             continue
-        claims.append({
-            "claim_id": str(uuid.uuid4()),
-            "claim_text": sentence,
-        })
+        item = ClaimItem(
+            claim_id=str(uuid.uuid4()),
+            claim_text=sentence,
+        )
+        claims.append(item.model_dump())
 
     return {"claims": claims}
 
@@ -182,12 +210,15 @@ def check_claims_extracted(state: PipelineState) -> str:
 def retriever_node(state: PipelineState) -> dict:
     """Retrieve top-k evidence chunks from ChromaDB for each claim.
 
+    Embeddings are generated via EmbeddingService (LLM API).
+    ChromaDB is used ONLY for similarity search with pre-computed embeddings.
     Uses ONLY retrieved documents. Does NOT generate evidence.
 
-    Reads: claims, _vector_store
-    Writes: evidence_map
+    Reads: claims, _vector_store, _embedding_service
+    Writes: evidence_map (claim_id → list of EvidenceChunk dicts)
     """
     vector_store = state.get("_vector_store")
+    embedding_service = state.get("_embedding_service")
     claims = state["claims"]
     evidence_map: dict = {}
 
@@ -195,8 +226,23 @@ def retriever_node(state: PipelineState) -> dict:
         claim_id = claim["claim_id"]
         claim_text = claim["claim_text"]
         try:
-            evidence = vector_store.query(query_text=claim_text, top_k=5)
-            evidence_map[claim_id] = evidence
+            # Generate query embedding via LLM API
+            query_embedding = embedding_service.embed_query(claim_text)
+            # Query ChromaDB with pre-computed embedding
+            raw_evidence = vector_store.query(
+                query_embedding=query_embedding, top_k=5
+            )
+            # Validate each evidence chunk via Pydantic
+            validated = []
+            for e in raw_evidence:
+                chunk = EvidenceChunk(
+                    text_snippet=e.get("text_snippet", ""),
+                    page_number=e.get("page_number", 0),
+                    relevance_score=e.get("relevance_score", 0.0),
+                    document_id=e.get("document_id", ""),
+                )
+                validated.append(chunk.model_dump())
+            evidence_map[claim_id] = validated
         except Exception:
             evidence_map[claim_id] = []
 
@@ -215,6 +261,8 @@ _MEDIUM_THRESHOLD = 0.4
 def verifier_node(state: PipelineState) -> dict:
     """Assign status and confidence to each claim based solely on evidence.
 
+    Output is validated via VerificationResult Pydantic model.
+
     Status definitions:
         supported       — evidence clearly confirms the claim
         weakly_supported — partial or indirect support
@@ -226,7 +274,7 @@ def verifier_node(state: PipelineState) -> dict:
         Low   (0.0–0.3)  no support or weak match
 
     Reads: claims, evidence_map
-    Writes: verification_results
+    Writes: verification_results (list of VerificationResult dicts)
     """
     claims = state["claims"]
     evidence_map = state["evidence_map"]
@@ -255,22 +303,24 @@ def verifier_node(state: PipelineState) -> dict:
                 status = "unsupported"
                 confidence_score = round(max(max_relevance, 0.05), 2)
 
-        # Build evidence snippets (top 3)
+        # Build evidence snippets (top 3), validated via EvidenceItem
         evidence_snippets = [
-            {
-                "snippet": e.get("text_snippet", ""),
-                "page_number": e.get("page_number", 0),
-            }
+            EvidenceItem(
+                snippet=e.get("text_snippet", ""),
+                page_number=e.get("page_number", 0),
+            ).model_dump()
             for e in evidence_list[:3]
         ]
 
-        results.append({
-            "claim_id": claim_id,
-            "claim_text": claim_text,
-            "status": status,
-            "confidence_score": confidence_score,
-            "evidence": evidence_snippets,
-        })
+        # Validate via VerificationResult
+        vr = VerificationResult(
+            claim_id=claim_id,
+            claim_text=claim_text,
+            status=status,
+            confidence_score=confidence_score,
+            evidence=[EvidenceItem(**e) for e in evidence_snippets],
+        )
+        results.append(vr.model_dump())
 
     return {"verification_results": results}
 
@@ -284,9 +334,10 @@ def explainer_node(state: PipelineState) -> dict:
 
     Uses LLM API when available, falls back to rule-based templates.
     Does NOT change the verification decision.
+    Output is validated via FinalClaimResult Pydantic model.
 
     Reads: verification_results, _llm_client
-    Writes: final_results
+    Writes: final_results (list of FinalClaimResult dicts)
     """
     llm_client = state.get("_llm_client")
     verification_results = state["verification_results"]
@@ -297,10 +348,16 @@ def explainer_node(state: PipelineState) -> dict:
         if explanation is None:
             explanation = _explain_with_rules(result)
 
-        final_results.append({
-            **result,
-            "explanation": explanation,
-        })
+        # Validate via FinalClaimResult
+        fcr = FinalClaimResult(
+            claim_id=result["claim_id"],
+            claim_text=result["claim_text"],
+            status=result["status"],
+            confidence_score=result["confidence_score"],
+            evidence=[EvidenceItem(**e) for e in result.get("evidence", [])],
+            explanation=explanation,
+        )
+        final_results.append(fcr.model_dump())
 
     return {"final_results": final_results}
 
@@ -426,16 +483,17 @@ class ValidationPipeline:
     """Thin entry point that holds runtime dependencies and invokes the graph.
 
     This is NOT an agent class. It only:
-    1. Stores references to vector_store and llm_client
+    1. Stores references to vector_store, llm_client, embedding_service
     2. Injects them into shared state
     3. Calls graph.invoke()
 
     All reasoning logic lives in the graph nodes above.
     """
 
-    def __init__(self, vector_store, llm_client=None):
+    def __init__(self, vector_store, llm_client=None, embedding_service=None):
         self.vector_store = vector_store
         self.llm_client = llm_client
+        self.embedding_service = embedding_service
         self.graph = build_validation_graph()
 
     def execute(self, raw_input: str) -> dict:
@@ -446,6 +504,7 @@ class ValidationPipeline:
 
         Returns:
             Dict with input_type and structured claim results.
+            All claim data is validated via FinalClaimResult before return.
 
         Raises:
             ValueError: If input is invalid.
@@ -457,6 +516,7 @@ class ValidationPipeline:
         initial_state: PipelineState = {
             "_vector_store": self.vector_store,
             "_llm_client": self.llm_client,
+            "_embedding_service": self.embedding_service,
             "raw_input": raw_input,
             "input_type": "",
             "pipeline_decision": "",
@@ -477,8 +537,14 @@ class ValidationPipeline:
                 "message": "No factual claims could be extracted from the input.",
             }
 
+        # Final validation — every claim must pass FinalClaimResult validation
+        validated_claims = []
+        for c in claims:
+            validated = FinalClaimResult(**c)
+            validated_claims.append(validated.model_dump())
+
         return {
             "input_type": final_state.get("input_type", "answer"),
-            "claims": claims,
+            "claims": validated_claims,
         }
 

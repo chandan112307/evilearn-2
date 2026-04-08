@@ -1,18 +1,23 @@
-"""Vector storage module using ChromaDB for semantic retrieval.
+"""Vector storage module using ChromaDB for storage and similarity search ONLY.
 
-Uses ChromaDB's built-in default embedding function for embedding
-generation. ChromaDB handles both storage and embedding natively.
+ChromaDB does NOT generate embeddings. All embeddings are generated externally
+by the EmbeddingService (via the LLM API) and passed into ChromaDB as
+pre-computed vectors.
+
+ChromaDB = storage + similarity search
+LLM API  = embedding generation (via EmbeddingService)
 """
 
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 from typing import Optional
 
 
 class VectorStore:
     """Manages vector storage and retrieval using ChromaDB.
 
-    ChromaDB handles embedding generation internally via its
-    built-in default embedding function.
+    ChromaDB stores and retrieves pre-computed embeddings.
+    It NEVER generates embeddings on its own.
     """
 
     def __init__(self, persist_directory: str = "./chroma_db"):
@@ -27,7 +32,10 @@ class VectorStore:
 
     @property
     def collection(self) -> chromadb.Collection:
-        """Get or create the document collection."""
+        """Get or create the document collection.
+
+        No embedding function is assigned — ChromaDB never auto-embeds.
+        """
         if self._collection is None:
             self._collection = self._client.get_or_create_collection(
                 name=self._collection_name,
@@ -40,32 +48,39 @@ class VectorStore:
         chunk_ids: list[str],
         documents: list[str],
         metadatas: list[dict],
+        embeddings: list[list[float]],
     ) -> None:
-        """Store chunks in ChromaDB. Embeddings are generated automatically.
+        """Store chunks with pre-computed embeddings in ChromaDB.
+
+        Embeddings MUST be generated externally (via EmbeddingService)
+        and passed in here. ChromaDB does NOT embed anything.
 
         Args:
             chunk_ids: Unique IDs for each chunk.
             documents: Raw text of each chunk.
             metadatas: Metadata dicts (page_number, document_id) for each chunk.
+            embeddings: Pre-computed embedding vectors from EmbeddingService.
         """
         self.collection.add(
             ids=chunk_ids,
             documents=documents,
             metadatas=metadatas,
+            embeddings=embeddings,
         )
 
     def query(
         self,
-        query_text: str,
+        query_embedding: list[float],
         top_k: int = 5,
         document_id: Optional[str] = None,
     ) -> list[dict]:
-        """Retrieve top-k similar chunks using text query.
+        """Retrieve top-k similar chunks using a pre-computed query embedding.
 
-        ChromaDB handles embedding the query text internally.
+        The query embedding MUST be generated externally (via EmbeddingService).
+        ChromaDB only performs the similarity search.
 
         Args:
-            query_text: Claim text to search for.
+            query_embedding: Pre-computed embedding vector for the query.
             top_k: Number of results to return.
             document_id: Optional filter by document.
 
@@ -77,7 +92,7 @@ class VectorStore:
             where_filter = {"document_id": document_id}
 
         results = self.collection.query(
-            query_texts=[query_text],
+            query_embeddings=[query_embedding],
             n_results=top_k,
             where=where_filter,
             include=["documents", "metadatas", "distances"],
