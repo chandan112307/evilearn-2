@@ -54,7 +54,6 @@ doc_processor = DocumentProcessor()
 chunker = TextChunker(chunk_size=500, chunk_overlap=50)
 vector_store = VectorStore(
     persist_directory=settings.CHROMA_PERSIST_DIR,
-    model_name=settings.EMBEDDING_MODEL,
 )
 
 # Initialize LLM client (optional)

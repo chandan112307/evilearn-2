@@ -386,7 +386,6 @@ Default origins: `http://localhost:5173` (Vite dev server), `http://localhost:30
 | `LLM_API_KEY` | `""` | API key for Groq or OpenAI |
 | `LLM_MODEL` | `llama3-8b-8192` | LLM model name |
 | `LLM_PROVIDER` | `groq` | `groq` or `openai` |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | SentenceTransformer model |
 | `TOP_K_RESULTS` | `5` | Number of evidence chunks to retrieve |
 | `MAX_FILE_SIZE_MB` | `50` | Maximum upload file size in MB |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Allowed CORS origins |

@@ -52,7 +52,7 @@ graph TB
 | Frontend | Structured reasoning interface | React 19, Vite 8, Tailwind CSS 4 |
 | Backend API | Request routing, validation, orchestration | FastAPI, Uvicorn, Pydantic |
 | AI Engine | Deterministic multi-agent reasoning pipeline | LangGraph StateGraph |
-| Data Layer | Document processing, embedding, storage, retrieval | PyMuPDF, ChromaDB, SQLite, SentenceTransformers |
+| Data Layer | Document processing, embedding, storage, retrieval | PyMuPDF, ChromaDB, SQLite |
 
 ## Data Flow Diagrams
 
@@ -206,7 +206,6 @@ Every verified claim returns this structure:
 | Validation | Pydantic | 2.5+ | Request/response schemas |
 | PDF Processing | PyMuPDF (fitz) | 1.23+ | Text extraction |
 | Vector Database | ChromaDB | 0.4+ | Embedding storage & retrieval |
-| Embeddings | SentenceTransformers | 2.2+ | all-MiniLM-L6-v2 model |
 | Pipeline | LangGraph | 0.0.20+ | StateGraph orchestration |
 | Relational DB | SQLite | Built-in | Session, claims, feedback storage |
 | LLM Provider | Groq / OpenAI | — | Claim extraction & explanation |
@@ -234,7 +233,6 @@ export LLM_MODEL="llama3-8b-8192"        # LLM model name
 # Optional environment variables
 export SQLITE_DB_PATH="./evilearn.db"
 export CHROMA_PERSIST_DIR="./chroma_db"
-export EMBEDDING_MODEL="all-MiniLM-L6-v2"
 export TOP_K_RESULTS="5"
 export MAX_FILE_SIZE_MB="50"
 export CORS_ORIGINS="http://localhost:5173,http://localhost:3000"

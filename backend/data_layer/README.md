@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Data Layer handles the full lifecycle of document data: ingestion (PDF/text extraction), chunking (splitting into retrievable units), embedding & storage (ChromaDB with SentenceTransformers), relational storage (SQLite for sessions, claims, results, feedback), and similarity retrieval (cosine search over embedded chunks).
+The Data Layer handles the full lifecycle of document data: ingestion (PDF/text extraction), chunking (splitting into retrievable units), embedding & storage (ChromaDB with its built-in default embedding function), relational storage (SQLite for sessions, claims, results, feedback), and similarity retrieval (cosine search over embedded chunks).
 
 ## Technology
 
@@ -13,7 +13,7 @@ The Data Layer handles the full lifecycle of document data: ingestion (PDF/text 
 | PDF Extraction | PyMuPDF (`fitz`) | Extract text with page mapping from PDF files |
 | Text Chunking | Custom `TextChunker` | Split text into overlapping chunks at sentence boundaries |
 | Vector Store | ChromaDB | Persistent vector storage with cosine similarity search |
-| Embeddings | SentenceTransformers (`all-MiniLM-L6-v2`) | Automatic embedding via ChromaDB's built-in function |
+| Embeddings | ChromaDB (built-in default) | Automatic embedding generation handled natively by ChromaDB |
 | Relational DB | SQLite | Sessions, claims, results, feedback, document metadata |
 
 ## Architecture
@@ -80,7 +80,7 @@ Splits page text into fixed-size chunks with overlap, preserving page mapping.
 
 ### VectorStore (`vector_store.py`)
 
-Manages vector storage and cosine similarity retrieval using ChromaDB. Embeddings are generated automatically by ChromaDB's built-in `SentenceTransformerEmbeddingFunction`.
+Manages vector storage and cosine similarity retrieval using ChromaDB. Embeddings are generated automatically by ChromaDB's built-in default embedding function.
 
 | Method | Input | Output | Notes |
 |--------|-------|--------|-------|
@@ -91,7 +91,7 @@ Manages vector storage and cosine similarity retrieval using ChromaDB. Embedding
 **ChromaDB collection configuration:**
 - Collection name: `evilearn_documents`
 - Distance metric: `cosine` (via `hnsw:space`)
-- Embedding model: `all-MiniLM-L6-v2`
+- Embedding: ChromaDB built-in default embedding function
 - Persistence: Local directory (`./chroma_db` default)
 
 **Relevance score calculation:**
@@ -216,8 +216,8 @@ flowchart LR
 ```
 Collection: evilearn_documents
 ├── Distance Metric: cosine (hnsw:space)
-├── Embedding Function: SentenceTransformerEmbeddingFunction
-│   └── Model: all-MiniLM-L6-v2
+├── Embedding Function: ChromaDB built-in default
+│   └── Embedding auto-generated from documents
 ├── Documents: Raw chunk text (embedding auto-generated)
 ├── IDs: chunk_id (UUID)
 └── Metadata per chunk:

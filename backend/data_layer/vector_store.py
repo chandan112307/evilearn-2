@@ -1,32 +1,27 @@
 """Vector storage module using ChromaDB for semantic retrieval.
 
-Uses ChromaDB's built-in SentenceTransformerEmbeddingFunction for embedding
-generation, so ChromaDB handles both storage and embedding natively.
+Uses ChromaDB's built-in default embedding function for embedding
+generation. ChromaDB handles both storage and embedding natively.
 """
 
 import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from typing import Optional
 
 
 class VectorStore:
     """Manages vector storage and retrieval using ChromaDB.
 
-    ChromaDB handles embedding generation internally via
-    SentenceTransformerEmbeddingFunction (all-MiniLM-L6-v2).
+    ChromaDB handles embedding generation internally via its
+    built-in default embedding function.
     """
 
-    def __init__(self, persist_directory: str = "./chroma_db", model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, persist_directory: str = "./chroma_db"):
         """Initialize ChromaDB persistent client.
 
         Args:
             persist_directory: Directory for persistent storage.
-            model_name: Sentence transformer model for embeddings.
         """
         self._client = chromadb.PersistentClient(path=persist_directory)
-        self._embedding_function = SentenceTransformerEmbeddingFunction(
-            model_name=model_name,
-        )
         self._collection_name = "evilearn_documents"
         self._collection: Optional[chromadb.Collection] = None
 
@@ -37,7 +32,6 @@ class VectorStore:
             self._collection = self._client.get_or_create_collection(
                 name=self._collection_name,
                 metadata={"hnsw:space": "cosine"},
-                embedding_function=self._embedding_function,
             )
         return self._collection
 
