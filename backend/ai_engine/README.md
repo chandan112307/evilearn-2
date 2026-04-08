@@ -1,21 +1,23 @@
 # AI Reasoning Engine
 
-> This module implements a **deterministic multi-agent reasoning pipeline** using LangGraph StateGraph. Every agent has a fixed role, fixed inputs, and fixed outputs. The pipeline order is non-negotiable.
+> This module implements a **graph-native multi-agent reasoning system** using LangGraph StateGraph. All agent logic exists as **pure functions** (graph nodes) operating on shared state. There are NO agent classes. The pipeline order is non-negotiable.
 
 ## Overview
 
 The AI Engine decomposes user text into atomic claims, retrieves document evidence for each claim, verifies claims against that evidence, and generates human-readable explanations. It is **not** a conversational AI — it is a structured reasoning system where each stage produces traceable, auditable outputs.
 
+**Architecture principle:** Every agent is a LangGraph node — a pure function that reads from shared state and writes only its assigned fields. There are no standalone agent classes, no OOP wrappers, and no hidden sequencing.
+
 ## Architecture — LangGraph StateGraph Pipeline
 
 ```mermaid
 graph LR
-    START((START)) --> P[Planner Agent]
-    P --> CE[Claim Extractor Agent]
-    CE -->|has_claims| R[Retrieval Agent]
+    START((START)) --> P[planner_node]
+    P --> CE[claim_extractor_node]
+    CE -->|has_claims| R[retriever_node]
     CE -->|no_claims| END1((END))
-    R --> V[Verification Agent]
-    V --> E[Explanation Agent]
+    R --> V[verifier_node]
+    V --> E[explainer_node]
     E --> END2((END))
 
     style P fill:#e3f2fd
@@ -25,47 +27,70 @@ graph LR
     style E fill:#f3e5f5
 ```
 
-The pipeline is a strict 5-stage sequence implemented as a LangGraph `StateGraph`. Each agent is a node. Edges are strictly sequential except for the conditional edge after Claim Extraction (which short-circuits to END if no claims are extracted).
+The pipeline is a strict 5-stage sequence implemented as a LangGraph `StateGraph`. Each agent is a **pure function** registered as a node via `graph.add_node()`. Edges are strictly sequential except for the conditional edge after claim extraction (which short-circuits to END if no claims are extracted).
+
+## File Structure
+
+```
+backend/ai_engine/
+├── __init__.py      # Exports: ValidationPipeline, build_validation_graph
+├── pipeline.py      # ALL agent logic — pure functions + StateGraph + graph builder
+└── README.md        # This file
+```
+
+There is **no `agents/` directory**. All agent logic is defined inline in `pipeline.py` as top-level pure functions.
 
 ## Pipeline State
 
-The `PipelineState` TypedDict flows through all nodes:
+The `PipelineState` TypedDict is the shared state flowing through all nodes:
 
 ```python
 class PipelineState(TypedDict):
-    raw_input: str                      # Original user text
-    input_type: str                     # answer | explanation | summary | question
-    pipeline_decision: str              # Always "validation"
-    claims: list[dict]                  # Extracted atomic claims
-    evidence_map: dict                  # claim_id → list of evidence objects
-    verification_results: list[dict]    # Claims with status + confidence
-    final_results: list[dict]           # Claims with explanations added
-    error: Optional[str]                # Error message if any stage fails
+    # Injected dependencies (set once, never mutated by nodes)
+    _vector_store: object       # ChromaDB VectorStore
+    _llm_client: object         # Groq / OpenAI client (or None)
+
+    # Pipeline data (each field written by exactly one node)
+    raw_input: str              # Original user text
+    input_type: str             # Written by planner_node
+    pipeline_decision: str      # Written by planner_node
+    claims: list[dict]          # Written by claim_extractor_node
+    evidence_map: dict          # Written by retriever_node
+    verification_results: list[dict]  # Written by verifier_node
+    final_results: list[dict]   # Written by explainer_node
+    error: Optional[str]        # Error field
 ```
+
+### State Discipline
+
+Each node:
+- **Reads** only the fields it needs
+- **Writes** only its assigned fields
+- **Never** overwrites unrelated data
 
 ## Pipeline State Flow
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Planner: raw_input
-    Planner --> ClaimExtractor: + input_type, pipeline_decision
-    ClaimExtractor --> Retriever: + claims[]
-    ClaimExtractor --> [*]: no claims (short-circuit)
-    Retriever --> Verifier: + evidence_map{}
-    Verifier --> Explainer: + verification_results[]
-    Explainer --> [*]: + final_results[]
+    [*] --> planner_node: raw_input
+    planner_node --> claim_extractor_node: + input_type, pipeline_decision
+    claim_extractor_node --> retriever_node: + claims[]
+    claim_extractor_node --> [*]: no claims (short-circuit)
+    retriever_node --> verifier_node: + evidence_map{}
+    verifier_node --> explainer_node: + verification_results[]
+    explainer_node --> [*]: + final_results[]
 ```
 
-## Agents
+## Node Definitions
 
-### 1. Planner Agent (`agents/planner.py`)
+### Node 1: `planner_node(state)` — Input Classification
 
 **Role:** Classify the type of user input and decide pipeline routing.
 
 | Property | Value |
 |----------|-------|
-| **Input** | `raw_input` (string) |
-| **Output** | `{input_type, pipeline_decision, original_input}` |
+| **Reads** | `raw_input` |
+| **Writes** | `input_type`, `pipeline_decision` |
 | **Uses LLM** | No |
 | **Deterministic** | Yes |
 
@@ -80,21 +105,21 @@ stateDiagram-v2
 | Default | — | `answer` |
 
 **Rules:**
-- Pipeline decision is always `"validation"` — there is no alternative routing.
+- Pipeline decision is always `"validation"`.
 - Empty input raises `ValueError`.
 - Detection is case-insensitive.
 - Priority order: question → explanation → summary → answer (default).
 
 ---
 
-### 2. Claim Extraction Agent (`agents/claim_extractor.py`)
+### Node 2: `claim_extractor_node(state)` — Atomic Claim Decomposition
 
 **Role:** Decompose input text into atomic, independently verifiable factual claims.
 
 | Property | Value |
 |----------|-------|
-| **Input** | `text` (string), `input_type` (string) |
-| **Output** | `list[{claim_id: UUID, claim_text: string}]` |
+| **Reads** | `raw_input`, `input_type`, `_llm_client` |
+| **Writes** | `claims` |
 | **Uses LLM** | Yes (with fallback) |
 | **Deterministic** | Fallback only |
 
@@ -118,14 +143,14 @@ stateDiagram-v2
 
 ---
 
-### 3. Retrieval Agent (`agents/retriever.py`)
+### Node 3: `retriever_node(state)` — Document Evidence Retrieval
 
 **Role:** Retrieve relevant document evidence for each extracted claim.
 
 | Property | Value |
 |----------|-------|
-| **Input** | `claims` (list of claim dicts), `top_k` (int, default 5) |
-| **Output** | `dict` mapping `claim_id` → `list[evidence_object]` |
+| **Reads** | `claims`, `_vector_store` |
+| **Writes** | `evidence_map` |
 | **Uses LLM** | No |
 | **Deterministic** | Yes (given fixed embeddings) |
 
@@ -141,58 +166,49 @@ stateDiagram-v2
 
 **Rules:**
 - Queries ChromaDB once per claim using the claim text as the search query.
-- ChromaDB handles embedding the query text internally (same model as indexing).
-- If a query fails for any claim, that claim gets an empty evidence list `[]` (no error raised).
+- ChromaDB handles embedding the query text internally.
+- If a query fails for any claim, that claim gets an empty evidence list `[]`.
 - Default `top_k=5` chunks per claim.
 
 ---
 
-### 4. Verification Agent (`agents/verifier.py`)
+### Node 4: `verifier_node(state)` — Evidence-Based Verification
 
 **Role:** Evaluate each claim against its retrieved evidence and assign a status and confidence score.
 
 | Property | Value |
 |----------|-------|
-| **Input** | `claims` (list), `evidence_map` (dict) |
-| **Output** | `list[{claim_id, claim_text, status, confidence_score, evidence}]` |
+| **Reads** | `claims`, `evidence_map` |
+| **Writes** | `verification_results` |
 | **Uses LLM** | No |
 | **Deterministic** | Yes |
 
-**Scoring algorithm:**
-
-```
-combined_score = (max_relevance × 0.5) + (avg_relevance × 0.2) + (best_keyword_overlap × 0.3)
-```
-
-Where:
-- `max_relevance` = highest `relevance_score` among all evidence for the claim
-- `avg_relevance` = mean `relevance_score` across all evidence
-- `best_keyword_overlap` = maximum word overlap ratio between claim words and any evidence snippet
+**Verification uses only the highest `relevance_score` from ChromaDB.**
 
 **Status thresholds:**
 
-| Combined Score | Status | Confidence Score |
-|---------------|--------|-----------------|
-| ≥ 0.7 | `supported` | `min(combined_score, 1.0)` |
-| 0.4 – 0.69 | `weakly_supported` | `combined_score` |
-| < 0.4 | `unsupported` | `max(combined_score, 0.05)` |
+| Max Relevance Score | Status | Confidence Score |
+|---------------------|--------|-----------------|
+| ≥ 0.7 | `supported` | `min(max_relevance, 1.0)` |
+| 0.4 – 0.69 | `weakly_supported` | `max_relevance` |
+| < 0.4 | `unsupported` | `max(max_relevance, 0.05)` |
 | No evidence | `unsupported` | `0.1` |
 
 **Rules:**
 - Only the top 3 evidence pieces are attached to each result.
-- Verification is purely algorithmic — no LLM, no external knowledge.
+- Verification is purely evidence-based — no LLM, no external knowledge, no composite scoring.
 - Evidence is reformatted to `{snippet, page_number}` for the output.
 
 ---
 
-### 5. Explanation Agent (`agents/explainer.py`)
+### Node 5: `explainer_node(state)` — Explanation Generation
 
 **Role:** Generate human-readable explanations for each verification result.
 
 | Property | Value |
 |----------|-------|
-| **Input** | `verification_results` (list of verified claim dicts) |
-| **Output** | Same list with `explanation` field added to each entry |
+| **Reads** | `verification_results`, `_llm_client` |
+| **Writes** | `final_results` |
 | **Uses LLM** | Yes (with fallback) |
 | **Deterministic** | Fallback only |
 
@@ -201,7 +217,6 @@ Where:
 - Temperature: `0.2`
 - Max tokens: `256`
 - Prompt includes claim text, status, confidence, and evidence snippets
-- Instructed to write 2–3 sentences referencing evidence
 - **Does NOT change the verification decision**
 
 **Rule-based fallback** (used when LLM is unavailable or fails):
@@ -216,36 +231,65 @@ Where:
 | `unsupported` (no evidence) | States no supporting evidence was found |
 
 **Rules:**
-- Explanations are appended to existing verification results (mutation).
-- If LLM fails for one claim, fallback is used for that claim only.
+- A new dict is created for each result (no mutation of verification_results).
+- If LLM fails for one claim, rule-based fallback is used for that claim only.
 - Explanations never override the status or confidence score.
 
 ## Component Interaction
 
 ```mermaid
 graph TB
-    subgraph "ValidationPipeline"
+    subgraph "LangGraph StateGraph"
         direction LR
-        P[PlannerAgent] --> CE[ClaimExtractionAgent]
-        CE --> RA[RetrievalAgent]
-        RA --> VA[VerificationAgent]
-        VA --> EA[ExplanationAgent]
+        P[planner_node] --> CE[claim_extractor_node]
+        CE --> RN[retriever_node]
+        RN --> VN[verifier_node]
+        VN --> EN[explainer_node]
     end
 
     LLM[LLM Client<br/>Groq / OpenAI] -.->|used by| CE
-    LLM -.->|used by| EA
-    VS[VectorStore<br/>ChromaDB] -->|queried by| RA
+    LLM -.->|used by| EN
+    VS[VectorStore<br/>ChromaDB] -->|queried by| RN
 
     subgraph "No LLM Access"
         P
-        RA
-        VA
+        RN
+        VN
     end
+```
+
+## Graph Construction
+
+The graph is built by `build_validation_graph()`:
+
+```python
+def build_validation_graph():
+    graph = StateGraph(PipelineState)
+
+    # Register pure-function nodes
+    graph.add_node("planner", planner_node)
+    graph.add_node("claim_extractor", claim_extractor_node)
+    graph.add_node("retriever", retriever_node)
+    graph.add_node("verifier", verifier_node)
+    graph.add_node("explainer", explainer_node)
+
+    # Strict sequential edges
+    graph.add_edge(START, "planner")
+    graph.add_edge("planner", "claim_extractor")
+    graph.add_conditional_edges(
+        "claim_extractor", check_claims_extracted,
+        {"has_claims": "retriever", "no_claims": END},
+    )
+    graph.add_edge("retriever", "verifier")
+    graph.add_edge("verifier", "explainer")
+    graph.add_edge("explainer", END)
+
+    return graph.compile()
 ```
 
 ## Data Contracts
 
-### Claim Object (output of Claim Extractor)
+### Claim Object (output of claim_extractor_node)
 ```json
 {
   "claim_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -253,7 +297,7 @@ graph TB
 }
 ```
 
-### Evidence Object (output of Retriever, per claim)
+### Evidence Object (output of retriever_node, per claim)
 ```json
 {
   "text_snippet": "During photosynthesis, plants convert CO2 and water into glucose...",
@@ -263,7 +307,7 @@ graph TB
 }
 ```
 
-### Verification Output (output of Verifier)
+### Verification Output (output of verifier_node)
 ```json
 {
   "claim_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -277,7 +321,7 @@ graph TB
 }
 ```
 
-### Explanation Output (output of Explainer)
+### Final Output (output of explainer_node)
 ```json
 {
   "claim_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -285,53 +329,52 @@ graph TB
   "status": "supported",
   "confidence_score": 0.87,
   "evidence": [{"snippet": "...", "page_number": 12}],
-  "explanation": "This claim is supported by evidence found in the uploaded documents (page 12, page 13). The retrieved content closely matches the assertion with a confidence score of 0.87."
+  "explanation": "This claim is supported by evidence found in the uploaded documents (page 12, page 13)."
 }
 ```
 
-## Cross-Agent Constraints
+## Cross-Node Constraints
 
-1. **Planner cannot modify input.** It only classifies and routes.
-2. **Claim Extractor cannot verify.** It only decomposes text into claims.
-3. **Retriever cannot reason about evidence.** It only fetches from ChromaDB.
-4. **Verifier cannot use LLM.** Scoring is purely algorithmic (relevance + keyword overlap).
-5. **Explainer cannot change verification.** It only generates natural language for existing decisions.
-6. **No backward flow.** No agent can send data back to a previous agent.
-7. **LLM usage is restricted** to Claim Extractor and Explainer only.
+1. **planner_node cannot modify input.** It only classifies and routes.
+2. **claim_extractor_node cannot verify.** It only decomposes text into claims.
+3. **retriever_node cannot reason about evidence.** It only fetches from ChromaDB.
+4. **verifier_node cannot use LLM.** Status is assigned purely from evidence relevance scores.
+5. **explainer_node cannot change verification.** It only generates text for existing decisions.
+6. **No backward flow.** No node can send data back to a previous node.
+7. **LLM usage is restricted** to claim_extractor_node and explainer_node only.
 
 ## Edge Case Handling
 
 | Edge Case | Behavior |
 |-----------|----------|
-| Empty input | Planner raises `ValueError` → pipeline aborts |
+| Empty input | planner_node raises `ValueError` → pipeline aborts |
 | No claims extracted | Conditional edge routes to END → response includes message "No factual claims could be extracted" |
-| No evidence for a claim | Retriever returns `[]` → Verifier sets status `unsupported`, confidence `0.1` |
-| LLM unavailable | Claim Extractor uses rule-based sentence splitting; Explainer uses template-based explanations |
-| LLM returns unparseable response | Claim Extractor falls back to rule-based extraction (exception caught silently) |
-| Ambiguous claims | Treated as normal claims — no special handling. Verification score will reflect evidence quality. |
-| Conflicting evidence | Combined score algorithm naturally produces a lower score, typically resulting in `weakly_supported` |
+| No evidence for a claim | retriever_node returns `[]` → verifier_node sets status `unsupported`, confidence `0.1` |
+| LLM unavailable | claim_extractor_node uses rule-based splitting; explainer_node uses template-based explanations |
+| LLM returns unparseable response | claim_extractor_node falls back to rule-based extraction |
+| Ambiguous claims | Verification score reflects evidence quality |
+| Conflicting evidence | Lower relevance score → `weakly_supported` or `unsupported` |
 | Very short sentences (< 10 chars) | Filtered out by rule-based claim extractor |
-| Questions in input | Detected by Planner as `question` type; still processed through pipeline |
-| Pipeline stage failure | Raises `ValueError` or `RuntimeError` with descriptive message |
+| Questions in input | Detected by planner_node as `question` type; still processed |
+| Pipeline stage failure | Raises `ValueError` or `RuntimeError` |
 
 ## LLM Usage Policy
 
-| Agent | Uses LLM | Purpose | Fallback |
-|-------|----------|---------|----------|
-| Planner | **No** | — | — |
-| Claim Extractor | **Yes** | Intelligent claim decomposition | Sentence splitting |
-| Retriever | **No** | — | — |
-| Verifier | **No** | — | — |
-| Explainer | **Yes** | Natural language explanation | Template-based explanation |
+| Node | Uses LLM | Purpose | Fallback |
+|------|----------|---------|----------|
+| planner_node | **No** | — | — |
+| claim_extractor_node | **Yes** | Intelligent claim decomposition | Sentence splitting |
+| retriever_node | **No** | — | — |
+| verifier_node | **No** | — | — |
+| explainer_node | **Yes** | Natural language explanation | Template-based explanation |
 
-**Rationale:** Verification must be deterministic and reproducible. LLMs are only used where human-like language understanding (extraction) or generation (explanation) is required. The verification decision itself is always algorithmic.
+**Rationale:** Verification must be deterministic and reproducible. LLMs are only used where human-like language understanding (extraction) or generation (explanation) is required. The verification decision itself is always evidence-based.
 
 ## Limitations
 
 - **No claim deduplication.** Overlapping or equivalent claims are processed independently.
-- **Keyword overlap is case-insensitive but not lemmatized.** "running" and "run" are treated as different words.
-- **Verification is text-matching only.** No logical inference, negation detection, or semantic entailment.
-- **Confidence scores are heuristic.** They combine relevance and keyword overlap, not true probability.
-- **Rule-based fallback is coarse.** Sentence splitting may produce non-factual claims (e.g., opinions, rhetorical statements).
-- **No agent memory.** Each pipeline execution is independent — no learning from feedback.
+- **Verification is evidence-relevance only.** No logical inference, negation detection, or semantic entailment.
+- **Confidence scores are heuristic.** They reflect ChromaDB cosine similarity, not true probability.
+- **Rule-based fallback is coarse.** Sentence splitting may produce non-factual claims.
+- **No agent memory.** Each pipeline execution is independent.
 - **LLM temperature is fixed.** Not configurable per-request.

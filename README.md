@@ -292,13 +292,7 @@ evilearn/
 │   ├── requirements.txt               # Python dependencies
 │   ├── ai_engine/
 │   │   ├── README.md                  # AI Engine documentation
-│   │   ├── pipeline.py                # LangGraph pipeline orchestration
-│   │   └── agents/
-│   │       ├── planner.py             # Input type detection
-│   │       ├── claim_extractor.py     # Atomic claim extraction
-│   │       ├── retriever.py           # Evidence retrieval
-│   │       ├── verifier.py            # Claim verification
-│   │       └── explainer.py           # Explanation generation
+│   │   └── pipeline.py                # LangGraph graph-native agents + pipeline
 │   └── data_layer/
 │       ├── README.md                  # Data Layer documentation
 │       ├── document_processor.py      # PDF/text extraction
