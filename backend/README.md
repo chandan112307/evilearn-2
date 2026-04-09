@@ -335,6 +335,48 @@ graph TB
 | 400 | Empty or missing student answer |
 | 500 | Stress test engine failure |
 
+### Simulate Thinking (Graph-Based Cognitive Reasoning)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/simulate-thinking` | Simulate multi-level cognitive reasoning as structured graphs |
+
+**Request Body (`ThinkingSimulationRequest`):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `problem` | `string` | Yes | Problem or question to simulate reasoning for |
+| `student_answer` | `string` | No | Student answer/reasoning to compare against |
+
+**Response (`ThinkingSimulationResponse`):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cognitive_profiles` | `CognitiveProfile[]` | 3 profiles with constraint rules (allowed/forbidden ops, max abstraction) |
+| `reasoning_graphs` | `ReasoningGraph[]` | 3 structured reasoning graphs (nodes + edges + decisions + abstraction metrics) |
+| `strategy_distributions` | `StrategyDistribution[]` | Strategy % distributions per level (direct, rule_based, transformation, etc.) |
+| `structural_comparison` | `StructuralComparison` | Comparison by graph shape, strategy distribution, abstraction flow |
+| `gap_analysis` | `GapItem[]` | Structural gap insights (each with severity + source) |
+| `student_graph` | `StudentGraph` | Student reasoning converted to graph structure (if student_answer provided) |
+| `validation_passed` | `bool` | Whether all cognitive constraints were satisfied |
+| `validation_notes` | `string[]` | Details of any constraint fixes applied |
+
+**Key Schemas:**
+
+| Schema | Description |
+|--------|-------------|
+| `ReasoningNode` | step_id, operation_type, concept_used, input/output, reasoning, abstraction_level, strategy_type |
+| `ReasoningEdge` | from_step_id → to_step_id, relation_type (derives/transforms/simplifies) |
+| `DecisionPoint` | decision_point, alternatives_considered, chosen_path_reason |
+| `AbstractionMetrics` | average_abstraction, max_abstraction, transitions, flow |
+
+**Error Codes:**
+
+| Status | Cause |
+|--------|-------|
+| 400 | Empty problem text |
+| 500 | Thinking simulation engine failure |
+
 ## Pipeline Orchestration
 
 ```mermaid
@@ -380,6 +422,31 @@ sequenceDiagram
     FastAPI-->>Client: EvaluateReasoningResponse
 ```
 
+### Thinking Simulation Orchestration
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FastAPI as FastAPI (app.py)
+    participant TSE as ThinkingSimulationEngine
+
+    Client->>FastAPI: POST /simulate-thinking
+    FastAPI->>FastAPI: Validate request (ThinkingSimulationRequest)
+    FastAPI->>TSE: thinking_engine.simulate(problem, student_answer)
+    TSE->>TSE: graph.invoke(initial_state)
+    Note over TSE: Node 1: Generate cognitive profiles with constraints
+    Note over TSE: Node 2: Generate 3 structurally divergent graphs
+    Note over TSE: Node 3: Validate constraints, fix violations
+    Note over TSE: Node 4: Compute strategy distributions
+    Note over TSE: Node 5: Compute abstraction metrics
+    Note over TSE: Node 6: Structural comparison (shape, strategy, abstraction)
+    Note over TSE: Node 7 (conditional): Convert student answer to graph
+    Note over TSE: Node 8: Generate structural gap insights
+    TSE-->>FastAPI: thinking simulation results
+    FastAPI->>FastAPI: Validate via ThinkingSimulationResponse schemas
+    FastAPI-->>Client: ThinkingSimulationResponse
+```
+
 ## Request & Output Validation (Pydantic Schemas)
 
 All request bodies are validated by Pydantic v2 models defined in `schemas.py`:
@@ -390,6 +457,7 @@ All request bodies are validated by Pydantic v2 models defined in `schemas.py`:
 | `FeedbackRequest` | `claim_id`, `session_id`, `decision` | `decision` matches `^(accept\|reject)$` |
 | `EditClaimRequest` | `claim_id`, `session_id`, `new_claim_text` | `new_claim_text` has `min_length=1` |
 | `EvaluateReasoningRequest` | `problem`, `student_answer`, `confidence` | `student_answer` has `min_length=1`, `confidence` ∈ [0, 100] |
+| `ThinkingSimulationRequest` | `problem`, `student_answer` | `problem` has `min_length=1` |
 
 **Output validation (BEFORE storage):**
 
@@ -402,6 +470,10 @@ All request bodies are validated by Pydantic v2 models defined in `schemas.py`:
 | `EvaluateReasoningResponse` | `stress_test_results`, `weakness_summary`, `robustness_summary`, `adversarial_questions` | All fields required, typed |
 | `WeaknessItem` | `type`, `detail` | Both non-empty strings |
 | `RobustnessSummary` | `robustness_score`, `summary`, `level` | `robustness_score` ∈ [0.0, 1.0], `level` ∈ {low, medium, high} |
+| `ThinkingSimulationResponse` | `cognitive_profiles`, `reasoning_graphs`, `strategy_distributions`, `structural_comparison`, `gap_analysis`, `student_graph`, `validation_passed`, `validation_notes` | All types validated via field_validator |
+| `ReasoningNode` | `step_id`, `operation_type`, `concept_used`, `abstraction_level`, `strategy_type` | `abstraction_level` ∈ {LOW, MEDIUM, HIGH}, `strategy_type` ∈ {direct_application, rule_based, transformation, reduction, optimization} |
+| `ReasoningEdge` | `from_step_id`, `to_step_id`, `relation_type` | `relation_type` ∈ {derives, transforms, simplifies} |
+| `GapItem` | `insight`, `severity`, `source` | `severity` ∈ {info, warning, critical}, `source` ∈ {structural, strategy, abstraction, comparison} |
 
 All pipeline output is validated via `ClaimResult` **before** being inserted into the database. If validation fails, the request is rejected with HTTP 500.
 

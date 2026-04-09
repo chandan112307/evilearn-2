@@ -33,6 +33,18 @@ from .schemas import (
     EvaluateReasoningResponse,
     WeaknessItem,
     RobustnessSummary,
+    ThinkingSimulationRequest,
+    ThinkingSimulationResponse,
+    CognitiveProfile,
+    ReasoningGraph,
+    ReasoningNode,
+    ReasoningEdge,
+    DecisionPoint,
+    AbstractionMetrics,
+    StrategyDistribution,
+    StructuralComparison,
+    StudentGraph,
+    GapItem,
 )
 from .data_layer.document_processor import DocumentProcessor
 from .data_layer.chunker import TextChunker
@@ -40,6 +52,7 @@ from .data_layer.vector_store import VectorStore
 from .data_layer.database import Database
 from .data_layer.embedding_service import EmbeddingService
 from .ai_engine.pipeline import ValidationPipeline
+from .ai_engine.thinking_engine import ThinkingSimulationEngine
 
 
 # --- Initialize Application ---
@@ -90,6 +103,10 @@ pipeline = ValidationPipeline(
     vector_store=vector_store,
     llm_client=llm_client,
     embedding_service=embedding_service,
+)
+
+thinking_engine = ThinkingSimulationEngine(
+    llm_client=llm_client,
 )
 
 
@@ -318,6 +335,184 @@ def evaluate_reasoning(request: EvaluateReasoningRequest):
             weakness_summary=weakness_items,
             robustness_summary=robustness,
             adversarial_questions=result.get("adversarial_questions", []),
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Thinking Simulation Endpoint ---
+
+@app.post("/simulate-thinking", response_model=ThinkingSimulationResponse)
+def simulate_thinking(request: ThinkingSimulationRequest):
+    """Simulate multi-level cognitive reasoning for a problem.
+
+    This is NOT a problem-solving endpoint. It simulates how different
+    cognitive levels (beginner, intermediate, expert) would reason about
+    a problem as structured graphs, structurally analyzes the reasoning,
+    and identifies gaps in the student's thinking if a student answer is provided.
+
+    Executes: Cognitive Profiles → Parallel Reasoning → Graph Builder
+    → Strategy Distribution → Abstraction Analysis → Structural Comparison
+    → Student Graph Conversion (conditional) → Gap Detection
+    """
+    try:
+        result = thinking_engine.simulate(
+            problem=request.problem,
+            student_answer=request.student_answer,
+        )
+
+        # Validate output via Pydantic
+        cognitive_profiles = [
+            CognitiveProfile(
+                level=p.get("level", "beginner"),
+                description=p.get("description", ""),
+                characteristics=p.get("characteristics", []),
+                allowed_operations=p.get("allowed_operations", []),
+                forbidden_operations=p.get("forbidden_operations", []),
+                max_abstraction=p.get("max_abstraction", "LOW"),
+            )
+            for p in result.get("cognitive_profiles", [])
+        ]
+
+        reasoning_graphs = []
+        for rp in result.get("reasoning_paths", []):
+            # Engine now uses "nodes" directly (graph-based, not step list)
+            raw_nodes = rp.get("nodes", rp.get("steps", []))
+            nodes = [
+                ReasoningNode(
+                    step_id=s.get("step_id", ""),
+                    operation_type=s.get("operation_type", ""),
+                    concept_used=s.get("concept_used", ""),
+                    input_value=s.get("input_value", s.get("input", "")),
+                    output_value=s.get("output_value", s.get("output", "")),
+                    reasoning=s.get("reasoning", s.get("reason", "")),
+                    abstraction_level=s.get("abstraction_level", "LOW"),
+                    strategy_type=s.get("strategy_type", "direct_application"),
+                )
+                for s in raw_nodes
+            ]
+            edges = [
+                ReasoningEdge(
+                    from_step_id=e.get("from_step_id", ""),
+                    to_step_id=e.get("to_step_id", ""),
+                    relation_type=e.get("relation_type", "derives"),
+                )
+                for e in rp.get("edges", [])
+            ]
+            decisions = [
+                DecisionPoint(
+                    decision_point=d.get("decision_point", "") if isinstance(d, dict) else str(d),
+                    alternatives_considered=d.get("alternatives_considered", []) if isinstance(d, dict) else [],
+                    chosen_path_reason=d.get("chosen_path_reason", "") if isinstance(d, dict) else "",
+                )
+                for d in rp.get("decisions", [])
+            ]
+            meta = rp.get("metadata", {})
+            abs_level = meta.get("abstraction_level", "low").upper()
+            if abs_level not in {"LOW", "MEDIUM", "HIGH"}:
+                abs_level = "LOW"
+            abstraction_metrics = AbstractionMetrics(
+                average_abstraction=meta.get("average_abstraction", 1.0),
+                max_abstraction=abs_level,
+            )
+            reasoning_graphs.append(
+                ReasoningGraph(
+                    level=rp.get("level", "beginner"),
+                    nodes=nodes,
+                    edges=edges,
+                    decisions=decisions,
+                    abstraction_metrics=abstraction_metrics,
+                    metadata=meta,
+                )
+            )
+
+        strategy_distributions = [
+            StrategyDistribution(
+                level=st.get("level", "beginner"),
+                direct_application_pct=st.get("direct_application_pct", 0.0),
+                rule_based_pct=st.get("rule_based_pct", 0.0),
+                transformation_pct=st.get("transformation_pct", 0.0),
+                reduction_pct=st.get("reduction_pct", 0.0),
+                optimization_pct=st.get("optimization_pct", 0.0),
+                strategies_used=st.get("strategies_used", []),
+            )
+            for st in result.get("strategy_tags", [])
+        ]
+
+        comparison_raw = result.get("comparison_results", {})
+        structural_comparison = StructuralComparison(
+            graph_shape=comparison_raw.get("graph_shape", comparison_raw.get("structural", {})),
+            strategy_distribution=comparison_raw.get("strategy_distribution", comparison_raw.get("strategy", {})),
+            abstraction_flow=comparison_raw.get("abstraction_flow", comparison_raw.get("abstraction", {})),
+            key_differences=comparison_raw.get("key_differences", []),
+        )
+
+        gap_analysis = [
+            GapItem(
+                insight=g.get("insight", ""),
+                severity=g.get("severity", "info"),
+                source=g.get("source", "structural"),
+            )
+            for g in result.get("gap_analysis", [])
+        ]
+
+        student_comp = result.get("student_comparison", {})
+        # Build student graph nodes/edges if available
+        student_nodes = [
+            ReasoningNode(
+                step_id=sn.get("step_id", ""),
+                operation_type=sn.get("operation_type", ""),
+                concept_used=sn.get("concept_used", ""),
+                input_value=sn.get("input_value", sn.get("input", "")),
+                output_value=sn.get("output_value", sn.get("output", "")),
+                reasoning=sn.get("reasoning", sn.get("reason", "")),
+                abstraction_level=sn.get("abstraction_level", "LOW"),
+                strategy_type=sn.get("strategy_type", "direct_application"),
+            )
+            for sn in student_comp.get("nodes", [])
+        ]
+        student_edges = [
+            ReasoningEdge(
+                from_step_id=se.get("from_step_id", ""),
+                to_step_id=se.get("to_step_id", ""),
+                relation_type=se.get("relation_type", "derives"),
+            )
+            for se in student_comp.get("edges", [])
+        ]
+        s_abs_raw = student_comp.get("abstraction_metrics", {})
+        s_max_abs = s_abs_raw.get("max_abstraction", "LOW")
+        if s_max_abs not in {"LOW", "MEDIUM", "HIGH"}:
+            s_max_abs = "LOW"
+        student_abs_metrics = AbstractionMetrics(
+            average_abstraction=s_abs_raw.get("average_abstraction", 1.0),
+            max_abstraction=s_max_abs,
+            abstraction_transitions=s_abs_raw.get("abstraction_transitions", []),
+            abstraction_flow=s_abs_raw.get("abstraction_flow", []),
+        )
+        student_graph = StudentGraph(
+            student_level_match=student_comp.get("student_level_match", "unknown"),
+            nodes=student_nodes,
+            edges=student_edges,
+            abstraction_metrics=student_abs_metrics,
+            missing_nodes=student_comp.get("missing_nodes", student_comp.get("missing_steps", [])),
+            missing_transformations=student_comp.get("missing_transformations", student_comp.get("missing_strategies", [])),
+            unnecessary_steps=student_comp.get("unnecessary_steps", student_comp.get("inefficiencies", [])),
+            abstraction_mismatches=student_comp.get("abstraction_mismatches", student_comp.get("abstraction_gaps", [])),
+            strategy_distribution=student_comp.get("strategy_distribution", {}),
+        )
+
+        return ThinkingSimulationResponse(
+            cognitive_profiles=cognitive_profiles,
+            reasoning_graphs=reasoning_graphs,
+            strategy_distributions=strategy_distributions,
+            structural_comparison=structural_comparison,
+            gap_analysis=gap_analysis,
+            student_graph=student_graph,
+            validation_passed=result.get("validation_passed", True),
+            validation_notes=result.get("validation_notes", []),
         )
 
     except ValueError as e:
