@@ -10,6 +10,160 @@ Input → Claims → Evidence → Verification → Stress Test (conditional) →
 
 A user submits text. The system decomposes it into atomic claims, retrieves evidence from uploaded documents, verifies each claim against that evidence, optionally stress-tests reasoning for robustness, and generates a human-readable explanation for every verdict. No claim is accepted or rejected without document-backed reasoning.
 
+## Thinking Simulation Engine
+
+EviLearn includes a **Thinking Simulation Engine** — a LangGraph-based multi-agent reasoning simulator that decomposes and compares how different cognitive levels think about a problem.
+
+### Feature Overview
+
+The Thinking Simulation Engine does **NOT** solve problems or check correctness. It focuses exclusively on:
+
+- **Reasoning structure** — how thinking is organized at each level
+- **Strategy differences** — which approaches each level uses or misses
+- **Abstraction levels** — low vs. high reasoning transitions
+
+### Architecture (LangGraph Nodes + Flow)
+
+```
+START → Cognitive Profile Generator → Parallel Reasoning Generator
+→ Reasoning Structurer → Strategy Tagger → Comparative Analyzer
+→ (if student answer exists) Student Comparator → Gap Generator → END
+```
+
+All 7 nodes operate as pure functions on a shared `ThinkingState` via LangGraph `StateGraph`. The student comparator node is conditional — it only executes when a student answer is provided.
+
+### State Design
+
+The engine uses a central `ThinkingState` (TypedDict) containing:
+
+| Field | Written By | Description |
+|-------|-----------|-------------|
+| `problem` | Input | The problem/question to analyze |
+| `student_answer` | Input | Optional student reasoning |
+| `cognitive_profiles` | Node 1 | Beginner, intermediate, expert profiles |
+| `reasoning_paths` | Node 2 | 3 independent reasoning paths |
+| `structured_graphs` | Node 3 | Structured representations with metadata |
+| `strategy_tags` | Node 4 | Strategy categorizations per level |
+| `comparison_results` | Node 5 | Cross-level comparison analysis |
+| `student_comparison` | Node 6 | Student vs. levels comparison (conditional) |
+| `gap_analysis` | Node 7 | Thinking gap insights |
+
+### Module Descriptions
+
+| Node | Name | Responsibility |
+|------|------|---------------|
+| 1 | Cognitive Profile Generator | Generates 3 distinct reasoning profiles (beginner, intermediate, expert) with enforced separation |
+| 2 | Parallel Reasoning Generator | Generates 3 independent reasoning paths, each following its profile constraints |
+| 3 | Reasoning Structurer | Converts reasoning paths into structured graphs with steps, decisions, and metadata |
+| 4 | Strategy Tagger | Tags each path with strategy categories (direct application, rule-based, transformation, reduction, optimization) |
+| 5 | Comparative Analyzer | Compares paths across structural, strategy, and abstraction dimensions |
+| 6 | Student Comparator | Conditional — compares student reasoning against all three levels |
+| 7 | Gap Generator | Produces strict insight outputs about thinking gaps |
+
+### Example Input/Output
+
+**Input:**
+```json
+{
+  "problem": "Calculate the derivative of f(x) = x³ + 2x² - 5x + 3",
+  "student_answer": "I used the power rule: f'(x) = 3x² + 4x - 5"
+}
+```
+
+**Output (abbreviated):**
+```json
+{
+  "cognitive_profiles": [
+    {
+      "level": "beginner",
+      "description": "Applies formulas directly without transformation...",
+      "characteristics": ["Direct formula usage", "No transformations", ...]
+    },
+    { "level": "intermediate", ... },
+    { "level": "expert", ... }
+  ],
+  "reasoning_paths": [
+    {
+      "level": "beginner",
+      "steps": [
+        {
+          "step_id": "b1",
+          "operation_type": "identify",
+          "concept_used": "problem recognition",
+          "input_value": "f(x) = x³ + 2x² - 5x + 3",
+          "output_value": "Identified as polynomial differentiation",
+          "reason": "Read the problem statement directly"
+        }
+      ]
+    }
+  ],
+  "strategy_tags": [
+    { "level": "beginner", "tags": ["direct_application"] },
+    { "level": "intermediate", "tags": ["rule_based_reasoning"] },
+    { "level": "expert", "tags": ["optimization", "transformation"] }
+  ],
+  "comparison_results": {
+    "structural": { ... },
+    "strategy": { ... },
+    "abstraction": { ... }
+  },
+  "student_comparison": {
+    "student_level_match": "beginner",
+    "missing_steps": ["Verification of result"],
+    "missing_strategies": ["transformation", "optimization"]
+  },
+  "gap_analysis": [
+    {
+      "insight": "Your approach follows beginner-level reasoning: direct application",
+      "severity": "warning"
+    },
+    {
+      "insight": "Expert simplifies using transformation before applying rules",
+      "severity": "info"
+    }
+  ]
+}
+```
+
+### Key Constraints
+
+- Does **NOT** output final answers
+- Does **NOT** validate correctness
+- Does **NOT** optimize for accuracy of solution
+- Focuses **ONLY** on reasoning structure, strategy differences, and abstraction levels
+
+### How to Run and Test
+
+```bash
+# Start backend
+cd backend
+pip install -r requirements.txt
+export LLM_API_KEY="your-api-key"
+export LLM_PROVIDER="groq"
+python -m backend.main
+
+# Start frontend
+cd frontend
+npm install
+npm run dev
+
+# Test the endpoint directly
+curl -X POST http://localhost:8000/simulate-thinking \
+  -H "Content-Type: application/json" \
+  -d '{"problem": "Solve x² - 4 = 0", "student_answer": "x = 2"}'
+```
+
+### Tech Stack Justification
+
+| Component | Technology | Reason |
+|-----------|-----------|--------|
+| Orchestration | LangGraph StateGraph | Mandatory graph-based execution with shared state |
+| LLM Layer | OpenAI / Groq | API-based reasoning for profile and path generation |
+| Backend | FastAPI | REST API with automatic validation |
+| Data Models | Pydantic | Strict typing for all structured outputs |
+| State Management | LangGraph State (TypedDict) | Global shared state across all nodes |
+| Execution Style | Graph-based only | No sequential function chaining |
+
 ## System Architecture
 
 EviLearn is organized into 4 layers, each with a strict single responsibility:
@@ -187,6 +341,32 @@ sequenceDiagram
     FE-->>U: Robustness score, failures, weaknesses, questions
 ```
 
+### Thinking Simulation Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant TSE as Thinking Simulation Engine
+
+    U->>FE: Submit problem + optional student answer
+    FE->>API: POST /simulate-thinking {problem, student_answer?}
+    API->>TSE: thinking_engine.simulate(problem, student_answer)
+
+    Note over TSE: Node 1: Generate cognitive profiles (beginner, intermediate, expert)
+    Note over TSE: Node 2: Generate parallel reasoning paths (3 independent)
+    Note over TSE: Node 3: Structure reasoning into graphs with metadata
+    Note over TSE: Node 4: Tag strategies (direct, rule-based, transformation, etc.)
+    Note over TSE: Node 5: Compare across structural, strategy, abstraction dimensions
+    Note over TSE: Node 6 (conditional): Compare student vs all levels
+    Note over TSE: Node 7: Generate thinking gap insights
+
+    TSE-->>API: Thinking simulation results
+    API-->>FE: ThinkingSimulationResponse
+    FE-->>U: Cognitive profiles, reasoning paths, comparisons, gap analysis
+```
+
 ## User Flow
 
 1. **Upload Documents** — User uploads PDF or TXT files that form the knowledge base.
@@ -195,6 +375,7 @@ sequenceDiagram
 4. **Provide Feedback** — User can accept, reject, or edit individual claims.
 5. **Review History** — User can browse past validation sessions with full results.
 6. **Stress Test Reasoning** — User submits a problem and student answer with confidence level. System stress-tests the reasoning for edge cases, weaknesses, and adversarial scenarios, returning a robustness score and targeted questions.
+7. **Thinking Simulation** — User submits a problem (and optionally a student answer). System simulates beginner, intermediate, and expert reasoning paths, performs structural comparison, and identifies thinking gaps.
 
 ## API Endpoint Summary
 
@@ -209,6 +390,7 @@ sequenceDiagram
 | `POST` | `/edit-claim` | Edit & re-validate claim | `{claim_id, session_id, new_claim_text}` | `ProcessInputResponse` |
 | `GET` | `/history` | Get full history | — | `{sessions: [...]}` |
 | `POST` | `/evaluate-reasoning` | Stress-test reasoning robustness | `{problem, student_answer, confidence}` | `EvaluateReasoningResponse` |
+| `POST` | `/simulate-thinking` | Simulate multi-level cognitive reasoning | `{problem, student_answer?}` | `ThinkingSimulationResponse` |
 
 ## Output Contract
 
@@ -261,6 +443,53 @@ The `/evaluate-reasoning` endpoint returns this structure:
   "adversarial_questions": [
     "What happens when x = 0?"
   ]
+}
+```
+
+### Thinking Simulation Output Contract
+
+The `/simulate-thinking` endpoint returns this structure:
+
+```json
+{
+  "cognitive_profiles": [
+    {
+      "level": "beginner",
+      "description": "Applies formulas directly...",
+      "characteristics": ["Direct formula usage", "No transformations"]
+    }
+  ],
+  "reasoning_paths": [
+    {
+      "level": "beginner",
+      "steps": [
+        {
+          "step_id": "b1",
+          "operation_type": "identify",
+          "concept_used": "problem recognition",
+          "input_value": "Problem text",
+          "output_value": "Identified problem type",
+          "reason": "Read the problem statement directly"
+        }
+      ],
+      "metadata": {}
+    }
+  ],
+  "strategy_tags": [
+    { "level": "beginner", "tags": ["direct_application"] }
+  ],
+  "comparison_results": {
+    "structural": {},
+    "strategy": {},
+    "abstraction": {}
+  },
+  "gap_analysis": [
+    {
+      "insight": "Your approach follows beginner-level reasoning: direct application",
+      "severity": "warning"
+    }
+  ],
+  "student_comparison": {}
 }
 ```
 
@@ -343,6 +572,7 @@ The frontend starts on `http://localhost:5173` and proxies `/api` requests to th
 7. **Embeddings come ONLY from the LLM API.** ChromaDB stores vectors, it never generates them.
 8. **All data is strictly typed.** Pydantic models validate every claim before storage. No untyped dicts in core flow.
 9. **Output is validated before persistence.** Pipeline output is validated via Pydantic schemas BEFORE inserting into the database.
+10. **Thinking Simulation is graph-based.** The Thinking Simulation Engine uses LangGraph StateGraph with 7 nodes, conditional edges, and shared state — no sequential function chaining.
 
 ## Limitations
 
@@ -368,6 +598,7 @@ evilearn/
 │   ├── ai_engine/
 │   │   ├── README.md                  # AI Engine documentation
 │   │   ├── pipeline.py                # LangGraph graph-native agents + pipeline
+│   │   ├── thinking_engine.py         # Thinking Simulation Engine (LangGraph)
 │   │   └── stress_test_agent/         # Knowledge Stress-Test Engine
 │   │       ├── stress_test_agent.py   # Main orchestrator
 │   │       ├── concept_extractor.py   # Extract key concepts from claims
@@ -402,5 +633,7 @@ evilearn/
             ├── EvidenceViewer.jsx     # Evidence snippet display
             ├── HistoryDashboard.jsx   # Session history browser
             ├── StressTestWorkspace.jsx# Stress test input form
-            └── StressTestResults.jsx  # Stress test results display
+            ├── StressTestResults.jsx  # Stress test results display
+            ├── ThinkingSimulationWorkspace.jsx # Thinking simulation input
+            └── ThinkingSimulationResults.jsx   # Thinking simulation results
 ```
