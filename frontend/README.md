@@ -69,7 +69,9 @@ graph TD
     App --> ResultsDisplay
     App --> HistoryDashboard
     App --> StressTestWorkspace
+    App --> ThinkingSimulationWorkspace
     StressTestWorkspace --> StressTestResults
+    ThinkingSimulationWorkspace --> ThinkingSimulationResults
     ResultsDisplay --> ClaimCard
     ClaimCard --> EvidenceViewer
 ```
@@ -90,6 +92,7 @@ The root component managing tab navigation and global state.
 - **Validation Workspace** (default) — Input text and view results
 - **Documents** — Upload and manage knowledge base files
 - **Stress Test** — Test reasoning robustness with adversarial analysis
+- **Thinking Simulator** — Graph-based cognitive reasoning simulation
 - **History** — Browse past validation sessions
 
 **Data flow:**
@@ -293,6 +296,67 @@ Displays stress test results including robustness score, failure scenarios, weak
 
 **Empty state:** If no results, the component is not rendered.
 
+---
+
+### ThinkingSimulationWorkspace (`components/ThinkingSimulationWorkspace.jsx`)
+
+Input form for the graph-based cognitive reasoning simulator.
+
+**Internal State:**
+
+| State | Type | Default | Description |
+|-------|------|---------|-------------|
+| `problem` | `string` | `""` | Problem/question text (required) |
+| `studentAnswer` | `string` | `""` | Student answer (optional) |
+| `processing` | `bool` | `false` | True during API call |
+| `error` | `string` | `""` | Error message |
+| `results` | `object` | `null` | ThinkingSimulationResponse |
+
+**Behavior:**
+- Calls `simulateThinking(problem, studentAnswer)` on submit
+- Passes `results` to `ThinkingSimulationResults`
+- Displays error message on failure
+
+---
+
+### ThinkingSimulationResults (`components/ThinkingSimulationResults.jsx`)
+
+Displays graph-based cognitive reasoning simulation results.
+
+**Props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `results` | `object` | `ThinkingSimulationResponse` from backend |
+
+**Display sections:**
+
+1. **Validation Notes** — Warning banner if constraint validation found issues
+2. **Cognitive Profiles** — 3 profile cards showing level, description, allowed/forbidden operations, max abstraction level (color-coded)
+3. **Reasoning Graphs** — For each level: nodes with operation_type, concept, input/output, reasoning, abstraction_level (color-coded: LOW=green, MEDIUM=yellow, HIGH=purple), strategy_type (color-coded badges), edge connectors showing relation_type (→ derives, ⟹ transforms, ↓ simplifies), decision points with alternatives
+4. **Strategy Distributions** — Per-level percentage bars for each strategy type (direct_application, rule_based, transformation, reduction, optimization)
+5. **Structural Comparison** — Graph shape metrics (node count, edge count, depth, linear vs transformed), abstraction flow visualization with color-coded level sequence, key structural differences
+6. **Student Reasoning Graph** (conditional) — Student's reasoning converted to same graph structure with nodes, edges, abstraction metrics, missing nodes/transformations, unnecessary steps, abstraction mismatches
+7. **Structural Gap Analysis** — Gap insights with severity badges (info/warning/critical) and source labels (structural/strategy/abstraction/comparison)
+
+**Color coding:**
+
+| Abstraction Level | Color |
+|-------------------|-------|
+| LOW | Green |
+| MEDIUM | Yellow |
+| HIGH | Purple |
+
+| Strategy Type | Color |
+|---------------|-------|
+| direct_application | Blue |
+| rule_based | Amber |
+| transformation | Purple |
+| reduction | Rose |
+| optimization | Emerald |
+
+**Empty state:** If no results, the component returns null.
+
 ## API Client (`api.js`)
 
 All API calls go through `/api` prefix, which Vite proxies to `http://localhost:8000` in development.
@@ -307,6 +371,7 @@ All API calls go through `/api` prefix, which Vite proxies to `http://localhost:
 | `editClaim(claimId, sessionId, newClaimText)` | POST | `/api/edit-claim` | `{claim_id, session_id, new_claim_text}` | `ProcessInputResponse` |
 | `getHistory()` | GET | `/api/history` | — | `{sessions: [...]}` |
 | `evaluateReasoning(problem, studentAnswer, confidence)` | POST | `/api/evaluate-reasoning` | `{problem, student_answer, confidence}` | `EvaluateReasoningResponse` |
+| `simulateThinking(problem, studentAnswer)` | POST | `/api/simulate-thinking` | `{problem, student_answer}` | `ThinkingSimulationResponse` |
 
 **Error handling pattern:** All functions check `res.ok`. On failure, they attempt to parse the error body for `detail`, falling back to a generic message. Errors are thrown as `Error` objects.
 
@@ -326,6 +391,8 @@ flowchart LR
     A -->|sessions list| H[HistoryDashboard]
     A -->|EvaluateReasoningResponse| I[StressTestWorkspace]
     I -->|results| J[StressTestResults]
+    A -->|ThinkingSimulationResponse| K[ThinkingSimulationWorkspace]
+    K -->|results| L[ThinkingSimulationResults]
 ```
 
 ### Outgoing (Frontend → Backend)
@@ -337,6 +404,7 @@ flowchart LR
     E[ClaimCard Accept/Reject] -->|feedback| F[POST /submit-feedback]
     G[ClaimCard Edit] -->|new_claim_text| H[POST /edit-claim]
     I[StressTestWorkspace] -->|problem, answer, confidence| J[POST /evaluate-reasoning]
+    K[ThinkingSimulationWorkspace] -->|problem, student_answer| L[POST /simulate-thinking]
 ```
 
 ## Error Handling

@@ -38,6 +38,7 @@ The pipeline is a strict 5-stage sequence (with an optional stress test stage) i
 backend/ai_engine/
 ├── __init__.py      # Exports: ValidationPipeline, build_validation_graph
 ├── pipeline.py      # ALL agent logic — pure functions + StateGraph + graph builder
+├── thinking_engine.py  # Thinking Simulation Engine — graph-based cognitive reasoning (LangGraph)
 ├── stress_test_agent/  # Knowledge Stress-Test Engine
 │   ├── stress_test_agent.py       # Main orchestrator
 │   ├── concept_extractor.py       # Extract key concepts from claims
@@ -53,7 +54,7 @@ backend/ai_engine/
 └── README.md        # This file
 ```
 
-There is **no `agents/` directory**. Core pipeline agent logic is defined inline in `pipeline.py` as top-level pure functions. The stress test engine is modularized in the `stress_test_agent/` directory.
+There is **no `agents/` directory**. Core pipeline agent logic is defined inline in `pipeline.py` as top-level pure functions. The stress test engine is modularized in the `stress_test_agent/` directory. The thinking simulation engine is a separate LangGraph StateGraph in `thinking_engine.py`.
 
 ## Pipeline State
 
@@ -481,3 +482,199 @@ The `ValidationPipeline.execute()` performs a final validation pass — every cl
 - **Rule-based fallback is coarse.** Sentence splitting may produce non-factual claims.
 - **No agent memory.** Each pipeline execution is independent.
 - **LLM temperature is fixed.** Not configurable per-request.
+
+---
+
+## Thinking Simulation Engine (`thinking_engine.py`)
+
+> This module implements a **graph-based cognitive reasoning simulator** using LangGraph StateGraph. Reasoning is represented as structured graphs (nodes + edges + decisions), not plain text. Cognitive profiles act as hard generation constraints. Comparison is structural — graph shape, strategy distribution, abstraction flow.
+
+### Architecture — LangGraph StateGraph (8 Nodes)
+
+```mermaid
+graph LR
+    START((START)) --> CPG[cognitive_profile_generator]
+    CPG --> PRG[parallel_reasoning_generator]
+    PRG --> RGB[reasoning_graph_builder]
+    RGB --> SCG[strategy_constrained_generator]
+    SCG --> AA[abstraction_analyzer]
+    AA --> SC[structural_comparator]
+    SC -->|has_student| SGC[student_graph_converter]
+    SC -->|no_student| GG[gap_generator]
+    SGC --> GG
+    GG --> END1((END))
+
+    style CPG fill:#e3f2fd
+    style PRG fill:#fff3e0
+    style RGB fill:#fce4ec
+    style SCG fill:#e8f5e9
+    style AA fill:#f3e5f5
+    style SC fill:#fff9c4
+    style SGC fill:#e0f2f1
+    style GG fill:#fbe9e7
+```
+
+All 8 nodes are pure functions on shared `ThinkingState`. The student graph converter is conditional (only when student_answer exists).
+
+### ThinkingState (Shared State)
+
+```python
+class ThinkingState(TypedDict):
+    _llm_client: object
+    problem: str
+    student_answer: str
+
+    cognitive_profiles: list[dict]      # Node 1
+    reasoning_graphs: list[dict]        # Node 2, 3
+    strategy_distributions: list[dict]  # Node 4
+    abstraction_data: list[dict]        # Node 5
+    comparison_results: dict            # Node 6
+    student_graph: dict                 # Node 7 (conditional)
+    gap_analysis: list[dict]            # Node 8
+    validation_passed: bool             # Node 3
+    validation_notes: list[str]         # Node 3
+```
+
+### Node Definitions
+
+#### Node 1: `cognitive_profile_generator_node` — Profile + Constraint Generation
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `problem`, `_llm_client` |
+| **Writes** | `cognitive_profiles` |
+| **Uses LLM** | Yes (with fallback) |
+
+Generates 3 cognitive profiles with **hard constraint rules**:
+
+| Level | Allowed Operations | Forbidden Operations | Max Abstraction |
+|-------|-------------------|---------------------|-----------------|
+| beginner | identify, recall, substitute, compute | transform, reframe, abstract, optimize, reduce | LOW |
+| intermediate | analyze, classify, apply_rule, decompose, verify, synthesize | optimize | MEDIUM |
+| expert | transform, reframe, abstract, reduce, optimize (REQUIRED) | none | HIGH |
+
+#### Node 2: `parallel_reasoning_generator_node` — Structured Graph Generation
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `problem`, `cognitive_profiles`, `_llm_client` |
+| **Writes** | `reasoning_graphs` |
+| **Uses LLM** | Yes (with fallback) |
+
+Each profile produces a graph with structurally different step_count, operation_types, and abstraction_levels. Output is **data-structure-first**: nodes + edges + decisions.
+
+#### Node 3: `reasoning_graph_builder_node` — Validation + Constraint Enforcement
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `reasoning_graphs`, `cognitive_profiles` |
+| **Writes** | `reasoning_graphs` (refined), `validation_passed`, `validation_notes` |
+| **Uses LLM** | No |
+| **Deterministic** | Yes |
+
+Validates and fixes:
+- Forbidden operations in wrong profile → replaced
+- Abstraction levels exceeding max → capped
+- Expert missing transformation → adds reframe step
+- Missing edges → auto-generated
+- Cross-profile structural similarity → warning logged
+
+#### Node 4: `strategy_constrained_generator_node` — Strategy Distribution
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `reasoning_graphs` |
+| **Writes** | `strategy_distributions` |
+| **Uses LLM** | No |
+| **Deterministic** | Yes |
+
+Computes % of each strategy type (direct_application, rule_based, transformation, reduction, optimization) from the strategy_type already assigned to each node during generation.
+
+#### Node 5: `abstraction_analyzer_node` — Abstraction Metrics
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `reasoning_graphs` |
+| **Writes** | `abstraction_data`, `reasoning_graphs` (enriched with metadata) |
+| **Uses LLM** | No |
+| **Deterministic** | Yes |
+
+Scores: LOW=1.0, MEDIUM=2.0, HIGH=3.0. Computes average, max, transitions (where level changes), and flow (sequence).
+
+#### Node 6: `structural_comparator_node` — Structural Comparison
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `reasoning_graphs`, `strategy_distributions`, `abstraction_data` |
+| **Writes** | `comparison_results` |
+| **Uses LLM** | No |
+| **Deterministic** | Yes |
+
+Compares:
+- **Graph Shape**: node count, edge count, depth, linear vs transformed
+- **Strategy Distribution**: % per strategy type per level
+- **Abstraction Flow**: average, max, transitions, flow sequence
+- **Key Differences**: auto-derived from structural data
+
+#### Node 7: `student_graph_converter_node` — Student Graph (Conditional)
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `student_answer`, `reasoning_graphs`, `abstraction_data`, `_llm_client` |
+| **Writes** | `student_graph` |
+| **Uses LLM** | Yes (with fallback) |
+
+Converts student answer to the **same graph structure** (nodes + edges + abstraction metrics + strategy distribution). Then compares structurally: missing nodes, missing transformations, unnecessary steps, abstraction mismatches.
+
+#### Node 8: `gap_generator_node` — Structural Gap Insights
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `comparison_results`, `student_graph`, `reasoning_graphs`, `strategy_distributions`, `abstraction_data` |
+| **Writes** | `gap_analysis` |
+| **Uses LLM** | No |
+| **Deterministic** | Yes |
+
+All gaps derived from structural data. Each gap has:
+- `insight`: the structural observation
+- `severity`: info, warning, or critical
+- `source`: structural, strategy, abstraction, or comparison
+
+Examples:
+- "Your reasoning contains 0 transformation steps; expert uses 2"
+- "Your abstraction level remains LOW throughout; expert shifts to HIGH"
+- "You use 5 steps; expert reduces problem to 2 steps"
+
+### Reasoning Graph Schema
+
+Each reasoning graph contains:
+
+```
+nodes[] → step_id, operation_type, concept_used, input, output,
+          reasoning, abstraction_level, strategy_type
+
+edges[] → from_step_id, to_step_id, relation_type
+          (derives | transforms | simplifies)
+
+decisions[] → decision_point, alternatives_considered, chosen_path_reason
+```
+
+### LLM Usage Policy (Thinking Engine)
+
+| Node | Uses LLM | Purpose | Fallback |
+|------|----------|---------|----------|
+| cognitive_profile_generator | **Yes** | Profile descriptions | Hardcoded profiles with constraint rules |
+| parallel_reasoning_generator | **Yes** | Graph generation under constraints | Deterministic rule-based graphs |
+| reasoning_graph_builder | **No** | Constraint validation | — |
+| strategy_constrained_generator | **No** | Distribution computation | — |
+| abstraction_analyzer | **No** | Abstraction scoring | — |
+| structural_comparator | **No** | Graph comparison | — |
+| student_graph_converter | **Yes** | Student reasoning extraction | Sentence splitting + keyword matching |
+| gap_generator | **No** | Structural gap derivation | — |
+
+### Thinking Engine Limitations
+
+- **LLM-generated graphs may require constraint fixes.** The reasoning_graph_builder ensures all constraints are met, but some LLM outputs need post-processing.
+- **Student reasoning extraction is approximate.** Rule-based fallback uses keyword matching when LLM is unavailable.
+- **No caching.** Each simulation is independent.
+- **No feedback loop.** The system does not learn from past simulations.

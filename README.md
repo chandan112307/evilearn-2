@@ -12,25 +12,90 @@ A user submits text. The system decomposes it into atomic claims, retrieves evid
 
 ## Thinking Simulation Engine
 
-EviLearn includes a **Thinking Simulation Engine** — a LangGraph-based multi-agent reasoning simulator that decomposes and compares how different cognitive levels think about a problem.
+EviLearn includes a **Thinking Simulation Engine** — a LangGraph-based **graph-based cognitive reasoning simulator** that generates structured reasoning graphs for three cognitive levels and performs structural comparison.
 
 ### Feature Overview
 
-The Thinking Simulation Engine does **NOT** solve problems or check correctness. It focuses exclusively on:
+The Thinking Simulation Engine does **NOT** solve problems or check correctness. It is a **strict cognitive reasoning engine** that:
 
-- **Reasoning structure** — how thinking is organized at each level
-- **Strategy differences** — which approaches each level uses or misses
-- **Abstraction levels** — low vs. high reasoning transitions
+- **Represents reasoning as graphs** (nodes + edges + decisions), not plain text
+- **Enforces cognitive profiles as hard constraints** during generation (allowed/forbidden operations, max abstraction levels)
+- **Generates strategies during creation** (not tagged post-hoc)
+- **Performs structural comparison** (graph shape, strategy distribution, abstraction flow), not surface-level text comparison
+- **Converts student answers to the same graph structure** for precise gap detection
 
 ### Architecture (LangGraph Nodes + Flow)
 
 ```
 START → Cognitive Profile Generator → Parallel Reasoning Generator
-→ Reasoning Structurer → Strategy Tagger → Comparative Analyzer
-→ (if student answer exists) Student Comparator → Gap Generator → END
+→ Reasoning Graph Builder → Strategy-Constrained Generator
+→ Abstraction Analyzer → Structural Comparator
+→ (if student answer exists) Student Graph Converter → Gap Generator → END
 ```
 
-All 7 nodes operate as pure functions on a shared `ThinkingState` via LangGraph `StateGraph`. The student comparator node is conditional — it only executes when a student answer is provided.
+All 8 nodes operate as pure functions on a shared `ThinkingState` via LangGraph `StateGraph`. The student graph converter node is conditional — it only executes when a student answer is provided. A validation layer in the Reasoning Graph Builder rejects and regenerates if cognitive constraints are violated.
+
+### Reasoning Graph Schema
+
+Each reasoning path is a true graph, not a step list:
+
+**Nodes:**
+- `step_id` — unique identifier
+- `operation_type` — what kind of reasoning operation (identify, recall, transform, reduce, etc.)
+- `concept_used` — concept or rule applied
+- `input` / `output` — data flowing through the step
+- `reasoning` — why this step was taken
+- `abstraction_level` — LOW, MEDIUM, or HIGH
+- `strategy_type` — direct_application, rule_based, transformation, reduction, optimization
+
+**Edges:**
+- `from_step_id` → `to_step_id`
+- `relation_type` — derives, transforms, or simplifies
+
+**Decisions:**
+- `decision_point` — what choice was made
+- `alternatives_considered` — what other approaches were available
+- `chosen_path_reason` — why this path was selected
+
+### Strict Cognitive Constraints
+
+Profiles act as **hard constraints during generation**, not descriptions:
+
+| Level | Allowed Operations | Forbidden Operations | Max Abstraction |
+|-------|-------------------|---------------------|-----------------|
+| Beginner | identify, recall, substitute, compute | transform, reframe, abstract, optimize, reduce | LOW |
+| Intermediate | analyze, classify, apply_rule, decompose, verify, synthesize | optimize | MEDIUM |
+| Expert | transform, reframe, abstract, reduce, optimize (REQUIRED) | none | HIGH |
+
+### Abstraction Model
+
+Each step gets an abstraction score: LOW (1.0), MEDIUM (2.0), HIGH (3.0).
+
+Each path computes:
+- **average_abstraction** — mean across all steps
+- **max_abstraction** — highest level reached
+- **abstraction_transitions** — where level changes (e.g., "e1(HIGH) → e2(HIGH)")
+- **abstraction_flow** — sequence of levels (e.g., ["HIGH", "HIGH", "HIGH"])
+
+### Structural Comparison Logic
+
+Comparison is **structural**, not descriptive:
+
+| Dimension | What is Compared |
+|-----------|-----------------|
+| Graph Shape | node count, edge count, depth, linear vs transformed |
+| Strategy Distribution | % of direct_application, rule_based, transformation, reduction, optimization per level |
+| Abstraction Flow | average/max abstraction, transitions, flow sequence |
+| Key Differences | automatically derived from structural data |
+
+### Validation Rules
+
+After reasoning generation, the system validates:
+- Beginner graphs contain no forbidden operations (transform, reframe, etc.)
+- Expert graphs contain at least one transformation or reduction step
+- Abstraction levels do not exceed profile maximum
+- Strategy types are valid (not arbitrary labels)
+- Cross-profile: graphs are structurally different (not identical operations)
 
 ### State Design
 
@@ -40,25 +105,28 @@ The engine uses a central `ThinkingState` (TypedDict) containing:
 |-------|-----------|-------------|
 | `problem` | Input | The problem/question to analyze |
 | `student_answer` | Input | Optional student reasoning |
-| `cognitive_profiles` | Node 1 | Beginner, intermediate, expert profiles |
-| `reasoning_paths` | Node 2 | 3 independent reasoning paths |
-| `structured_graphs` | Node 3 | Structured representations with metadata |
-| `strategy_tags` | Node 4 | Strategy categorizations per level |
-| `comparison_results` | Node 5 | Cross-level comparison analysis |
-| `student_comparison` | Node 6 | Student vs. levels comparison (conditional) |
-| `gap_analysis` | Node 7 | Thinking gap insights |
+| `cognitive_profiles` | Node 1 | Profiles with constraint rules (allowed/forbidden ops, max abstraction) |
+| `reasoning_graphs` | Node 2, 3 | Structured graphs with nodes, edges, decisions |
+| `strategy_distributions` | Node 4 | Strategy % distributions per level |
+| `abstraction_data` | Node 5 | Abstraction metrics per path |
+| `comparison_results` | Node 6 | Structural comparison (graph shape, strategy, abstraction) |
+| `student_graph` | Node 7 | Student reasoning as graph structure (conditional) |
+| `gap_analysis` | Node 8 | Structural gap insights |
+| `validation_passed` | Node 3 | Whether constraints were satisfied |
+| `validation_notes` | Node 3 | Details of any constraint fixes |
 
 ### Module Descriptions
 
 | Node | Name | Responsibility |
 |------|------|---------------|
-| 1 | Cognitive Profile Generator | Generates 3 distinct reasoning profiles (beginner, intermediate, expert) with enforced separation |
-| 2 | Parallel Reasoning Generator | Generates 3 independent reasoning paths, each following its profile constraints |
-| 3 | Reasoning Structurer | Converts reasoning paths into structured graphs with steps, decisions, and metadata |
-| 4 | Strategy Tagger | Tags each path with strategy categories (direct application, rule-based, transformation, reduction, optimization) |
-| 5 | Comparative Analyzer | Compares paths across structural, strategy, and abstraction dimensions |
-| 6 | Student Comparator | Conditional — compares student reasoning against all three levels |
-| 7 | Gap Generator | Produces strict insight outputs about thinking gaps |
+| 1 | Cognitive Profile Generator | Generates 3 profiles with strict constraint rules (allowed/forbidden ops, max abstraction) |
+| 2 | Parallel Reasoning Generator | Generates 3 structurally divergent reasoning graphs under profile constraints |
+| 3 | Reasoning Graph Builder | Enforces node + edge structure, validates constraints, fixes violations |
+| 4 | Strategy-Constrained Generator | Computes strategy distributions from generated strategy_type on each node |
+| 5 | Abstraction Analyzer | Computes abstraction metrics: average, max, transitions, flow |
+| 6 | Structural Comparator | Compares graphs by shape, strategy distribution, and abstraction flow |
+| 7 | Student Graph Converter | Conditional — converts student answer to same graph structure, compares structurally |
+| 8 | Gap Generator | Derives gap insights from structural data (step counts, transformation %, abstraction levels) |
 
 ### Example Input/Output
 
@@ -77,10 +145,13 @@ The engine uses a central `ThinkingState` (TypedDict) containing:
     {
       "level": "beginner",
       "description": "Applies formulas directly without transformation...",
-      "characteristics": ["Direct formula usage", "No transformations", ...]
+      "characteristics": ["Direct formula usage", "No transformations"],
+      "allowed_operations": ["identify", "recall", "substitute", "compute"],
+      "forbidden_operations": ["transform", "reframe", "abstract", "optimize", "reduce"],
+      "max_abstraction": "LOW"
     },
-    { "level": "intermediate", ... },
-    { "level": "expert", ... }
+    { "level": "intermediate", "max_abstraction": "MEDIUM", ... },
+    { "level": "expert", "max_abstraction": "HIGH", ... }
   ],
   "reasoning_graphs": [
     {
@@ -95,39 +166,85 @@ The engine uses a central `ThinkingState` (TypedDict) containing:
           "reasoning": "Read the problem statement directly",
           "abstraction_level": "LOW",
           "strategy_type": "direct_application"
+        },
+        { "step_id": "b2", "operation_type": "recall", ... },
+        { "step_id": "b3", "operation_type": "substitute", ... },
+        { "step_id": "b4", "operation_type": "compute", ... }
+      ],
+      "edges": [
+        { "from_step_id": "b1", "to_step_id": "b2", "relation_type": "derives" },
+        { "from_step_id": "b2", "to_step_id": "b3", "relation_type": "derives" },
+        { "from_step_id": "b3", "to_step_id": "b4", "relation_type": "derives" }
+      ],
+      "decisions": [
+        {
+          "decision_point": "Selected standard formula",
+          "alternatives_considered": ["No alternatives considered"],
+          "chosen_path_reason": "Used the first formula that came to mind"
         }
       ],
-      "edges": [],
-      "decisions": [],
-      "abstraction_metrics": { "average_abstraction": 1.0, "max_abstraction": "LOW" }
+      "abstraction_metrics": {
+        "average_abstraction": 1.0,
+        "max_abstraction": "LOW",
+        "abstraction_transitions": [],
+        "abstraction_flow": ["LOW", "LOW", "LOW", "LOW"]
+      }
     }
   ],
   "strategy_distributions": [
-    { "level": "beginner", "strategies_used": ["direct_application"] },
-    { "level": "intermediate", "strategies_used": ["rule_based_reasoning"] },
-    { "level": "expert", "strategies_used": ["optimization", "transformation"] }
+    {
+      "level": "beginner",
+      "direct_application_pct": 100.0,
+      "rule_based_pct": 0.0,
+      "transformation_pct": 0.0,
+      "reduction_pct": 0.0,
+      "optimization_pct": 0.0,
+      "strategies_used": ["direct_application"]
+    }
   ],
   "structural_comparison": {
-    "graph_shape": { ... },
+    "graph_shape": {
+      "beginner": { "node_count": 4, "edge_count": 3, "depth": 4, "is_linear": true },
+      "expert": { "node_count": 4, "edge_count": 3, "depth": 4, "is_linear": false }
+    },
     "strategy_distribution": { ... },
-    "abstraction_flow": { ... },
-    "key_differences": []
+    "abstraction_flow": {
+      "beginner": { "average_abstraction": 1.0, "max_abstraction": "LOW", "flow": ["LOW", "LOW", "LOW", "LOW"] },
+      "expert": { "average_abstraction": 3.0, "max_abstraction": "HIGH", "flow": ["HIGH", "HIGH", "HIGH", "HIGH"] }
+    },
+    "key_differences": [
+      "Beginner uses 4 nodes, intermediate uses 5, expert uses 4 nodes",
+      "Beginner follows a linear path; expert uses transformations",
+      "Average abstraction: beginner=1.0, expert=3.0 (expert operates at higher abstraction)"
+    ]
   },
   "student_graph": {
     "student_level_match": "beginner",
-    "missing_nodes": ["Verification of result"],
-    "missing_transformations": ["transformation", "optimization"]
+    "nodes": [{ "step_id": "s1", "operation_type": "compute", ... }],
+    "edges": [],
+    "missing_nodes": ["Missing 'reframe' step (used by expert)"],
+    "missing_transformations": ["No 'abstract' transformation (expert uses this)"],
+    "abstraction_mismatches": ["Student avg abstraction=1.0 vs expert avg=3.0"]
   },
   "gap_analysis": [
     {
       "insight": "Your approach follows beginner-level reasoning: direct application",
-      "severity": "warning"
+      "severity": "warning",
+      "source": "comparison"
     },
     {
-      "insight": "Expert simplifies using transformation before applying rules",
-      "severity": "info"
+      "insight": "Your reasoning contains 0 transformation steps; expert uses 2",
+      "severity": "warning",
+      "source": "strategy"
+    },
+    {
+      "insight": "Your abstraction level remains LOW throughout; expert shifts to HIGH",
+      "severity": "critical",
+      "source": "abstraction"
     }
-  ]
+  ],
+  "validation_passed": true,
+  "validation_notes": []
 }
 ```
 
@@ -360,17 +477,18 @@ sequenceDiagram
     FE->>API: POST /simulate-thinking {problem, student_answer?}
     API->>TSE: thinking_engine.simulate(problem, student_answer)
 
-    Note over TSE: Node 1: Generate cognitive profiles (beginner, intermediate, expert)
-    Note over TSE: Node 2: Generate parallel reasoning paths (3 independent)
-    Note over TSE: Node 3: Structure reasoning into graphs with metadata
-    Note over TSE: Node 4: Tag strategies (direct, rule-based, transformation, etc.)
-    Note over TSE: Node 5: Compare across structural, strategy, abstraction dimensions
-    Note over TSE: Node 6 (conditional): Compare student vs all levels
-    Note over TSE: Node 7: Generate thinking gap insights
+    Note over TSE: Node 1: Generate cognitive profiles with constraint rules
+    Note over TSE: Node 2: Generate 3 structurally divergent reasoning graphs
+    Note over TSE: Node 3: Validate + enforce constraints (reject/fix violations)
+    Note over TSE: Node 4: Compute strategy distributions from generated strategy_types
+    Note over TSE: Node 5: Compute abstraction metrics (avg, max, transitions, flow)
+    Note over TSE: Node 6: Structural comparison (graph shape, strategy %, abstraction)
+    Note over TSE: Node 7 (conditional): Convert student answer to graph structure
+    Note over TSE: Node 8: Generate structural gap insights
 
     TSE-->>API: Thinking simulation results
     API-->>FE: ThinkingSimulationResponse
-    FE-->>U: Cognitive profiles, reasoning paths, comparisons, gap analysis
+    FE-->>U: Reasoning graphs, strategy distributions, structural comparison, gap analysis
 ```
 
 ## User Flow
@@ -462,7 +580,10 @@ The `/simulate-thinking` endpoint returns this structure:
     {
       "level": "beginner",
       "description": "Applies formulas directly...",
-      "characteristics": ["Direct formula usage", "No transformations"]
+      "characteristics": ["Direct formula usage", "No transformations"],
+      "allowed_operations": ["identify", "recall", "substitute", "compute"],
+      "forbidden_operations": ["transform", "reframe", "abstract", "optimize", "reduce"],
+      "max_abstraction": "LOW"
     }
   ],
   "reasoning_graphs": [
@@ -480,29 +601,73 @@ The `/simulate-thinking` endpoint returns this structure:
           "strategy_type": "direct_application"
         }
       ],
-      "edges": [],
-      "decisions": [],
-      "abstraction_metrics": { "average_abstraction": 1.0, "max_abstraction": "LOW" },
-      "metadata": {}
+      "edges": [
+        { "from_step_id": "b1", "to_step_id": "b2", "relation_type": "derives" }
+      ],
+      "decisions": [
+        {
+          "decision_point": "Selected standard formula",
+          "alternatives_considered": ["No alternatives considered"],
+          "chosen_path_reason": "Used the first formula that came to mind"
+        }
+      ],
+      "abstraction_metrics": {
+        "average_abstraction": 1.0,
+        "max_abstraction": "LOW",
+        "abstraction_transitions": [],
+        "abstraction_flow": ["LOW", "LOW"]
+      },
+      "metadata": {
+        "step_count": 4,
+        "edge_count": 3,
+        "has_transformation": false
+      }
     }
   ],
   "strategy_distributions": [
-    { "level": "beginner", "strategies_used": ["direct_application"] }
+    {
+      "level": "beginner",
+      "direct_application_pct": 100.0,
+      "rule_based_pct": 0.0,
+      "transformation_pct": 0.0,
+      "reduction_pct": 0.0,
+      "optimization_pct": 0.0,
+      "strategies_used": ["direct_application"]
+    }
   ],
   "structural_comparison": {
-    "graph_shape": {},
-    "strategy_distribution": {},
-    "abstraction_flow": {},
-    "key_differences": []
+    "graph_shape": {
+      "beginner": { "node_count": 4, "edge_count": 3, "depth": 4, "is_linear": true }
+    },
+    "strategy_distribution": {
+      "beginner": { "direct_application_pct": 100.0, "transformation_pct": 0.0 }
+    },
+    "abstraction_flow": {
+      "beginner": { "average_abstraction": 1.0, "max_abstraction": "LOW", "flow": ["LOW"] }
+    },
+    "key_differences": [
+      "Beginner uses 4 nodes; expert uses 4 nodes",
+      "Beginner follows a linear path; expert uses transformations"
+    ]
   },
   "gap_analysis": [
     {
       "insight": "Your approach follows beginner-level reasoning: direct application",
       "severity": "warning",
-      "source": "structural"
+      "source": "comparison"
     }
   ],
-  "student_graph": {},
+  "student_graph": {
+    "student_level_match": "beginner",
+    "nodes": [],
+    "edges": [],
+    "abstraction_metrics": { "average_abstraction": 1.0, "max_abstraction": "LOW" },
+    "missing_nodes": [],
+    "missing_transformations": [],
+    "unnecessary_steps": [],
+    "abstraction_mismatches": [],
+    "strategy_distribution": {}
+  },
   "validation_passed": true,
   "validation_notes": []
 }
