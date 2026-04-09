@@ -1,23 +1,20 @@
-"""Cognitive Load Optimizer — LangGraph-based real-time reasoning flow regulator.
+"""Cognitive Load Optimizer -- LangGraph-based real-time reasoning flow regulator.
 
 This system sits between reasoning output and the user. It does NOT change
-the correctness of explanations — it controls HOW they are presented.
+the correctness of explanations -- it controls HOW they are presented.
 
-Architecture (LangGraph cyclic StateGraph):
-    START → explanation_analyzer → user_state_tracker → load_estimator
-    → control_engine → granularity_controller → explanation_restructurer
-    → feedback_loop_manager → (conditional: loop back or END)
+Architecture (LangGraph cyclic StateGraph, 6 nodes):
+    START -> explanation_analyzer -> user_state_tracker -> load_estimator
+    -> control_engine -> granularity_controller
+    -> feedback_manager -> (conditional: loop back or END)
 
 All nodes are pure functions operating on shared CognitiveLoadState.
-The graph is cyclic — the feedback loop manager decides whether to
+The graph is cyclic -- the feedback manager decides whether to
 re-optimize or finalize.
 """
 
-import os
 import re
-import json
-import uuid
-from typing import TypedDict, Optional
+from typing import TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
@@ -36,17 +33,12 @@ from ..schemas import (
 class CognitiveLoadState(TypedDict):
     """Shared state for the Cognitive Load Optimizer graph."""
 
-    # Injected
-    _llm_client: object
-
     # Input
     raw_explanation: str
     user_id: str
 
     # Explanation analysis (written by explanation_analyzer)
     steps: list[dict]           # list of ExplanationStep dicts
-    concept_transitions: list[str]
-    abstraction_levels: list[str]
 
     # User state (written by user_state_tracker)
     user_state: dict            # UserCognitiveState dict
@@ -59,10 +51,10 @@ class CognitiveLoadState(TypedDict):
     reasoning_mode: str         # fine-grained / medium / coarse
     control_actions: list[dict] # list of ControlAction dicts
 
-    # Restructured output (written by granularity_controller + restructurer)
+    # Restructured output (written by granularity_controller)
     adapted_steps: list[dict]   # list of ExplanationStep dicts
 
-    # Feedback loop (written by feedback_loop_manager)
+    # Feedback loop (written by feedback_manager)
     iteration: int
     max_iterations: int
     converged: bool
@@ -89,97 +81,54 @@ def _save_user_state(user_id: str, state: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Node 1: Explanation Analyzer
+# Node 1: Explanation Analyzer (lightweight -- NO LLM)
 # ---------------------------------------------------------------------------
 
 def explanation_analyzer_node(state: CognitiveLoadState) -> dict:
-    """Break explanation into steps, concept transitions, and abstraction levels.
+    """Break explanation into steps using lightweight sentence splitting.
 
-    Reads: raw_explanation, _llm_client
-    Writes: steps, concept_transitions, abstraction_levels
+    This is a deterministic, rule-based analyzer -- NO LLM.
+    The optimizer is a controller, not an analyzer.
+
+    Reads: raw_explanation
+    Writes: steps
     """
     raw = state["raw_explanation"]
-    llm_client = state.get("_llm_client")
-
     steps = []
-    concept_transitions = []
-    abstraction_levels = []
 
-    if llm_client:
-        try:
-            prompt = (
-                "Analyze the following explanation and break it into reasoning steps.\n"
-                "For each step, identify:\n"
-                "- content: the text of that step\n"
-                "- concepts: key concepts introduced\n"
-                "- abstraction_level: 'concrete', 'semi-abstract', or 'abstract'\n"
-                "- depends_on: list of step_ids this step depends on\n\n"
-                "Return ONLY a JSON array of objects with keys: "
-                "step_id, content, concepts, abstraction_level, depends_on.\n"
-                "Use step_id format: 's1', 's2', etc.\n\n"
-                f"Explanation:\n{raw}\n\nSteps:"
-            )
-            response = llm_client.chat.completions.create(
-                model=os.environ.get("LLM_MODEL", "llama3-8b-8192"),
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=2048,
-            )
-            content = response.choices[0].message.content.strip()
-            json_match = re.search(r'\[.*\]', content, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                for s in parsed:
-                    if isinstance(s, dict) and s.get("content"):
-                        abs_level = s.get("abstraction_level", "concrete")
-                        if abs_level not in {"concrete", "semi-abstract", "abstract"}:
-                            abs_level = "concrete"
-                        step = ExplanationStep(
-                            step_id=s.get("step_id", f"s{len(steps)+1}"),
-                            content=s["content"],
-                            concepts=s.get("concepts", []),
-                            abstraction_level=abs_level,
-                            depends_on=s.get("depends_on", []),
-                        )
-                        steps.append(step.model_dump())
-        except Exception:
-            pass
+    # Split on sentence boundaries
+    sentences = re.split(r'(?<=[.!?])\s+', raw.strip())
+    for i, sent in enumerate(sentences):
+        sent = sent.strip()
+        if len(sent) < 5:
+            continue
 
-    # Fallback: sentence-based splitting
-    if not steps:
-        sentences = re.split(r'(?<=[.!?])\s+', raw.strip())
-        for i, sent in enumerate(sentences):
-            sent = sent.strip()
-            if len(sent) < 5:
-                continue
-            step = ExplanationStep(
-                step_id=f"s{i+1}",
-                content=sent,
-                concepts=[],
-                abstraction_level="concrete",
-                depends_on=[f"s{i}"] if i > 0 else [],
-            )
-            steps.append(step.model_dump())
+        # Heuristic abstraction: longer sentences = more abstract
+        word_count = len(sent.split())
+        if word_count > 30:
+            abs_level = "abstract"
+        elif word_count > 15:
+            abs_level = "semi-abstract"
+        else:
+            abs_level = "concrete"
 
-    # Compute transitions and levels
-    for i in range(1, len(steps)):
-        prev_concepts = set(steps[i-1].get("concepts", []))
-        curr_concepts = set(steps[i].get("concepts", []))
-        new_concepts = curr_concepts - prev_concepts
-        if new_concepts:
-            concept_transitions.append(
-                f"s{i} → s{i+1}: introduced {', '.join(new_concepts)}"
-            )
-        abstraction_levels.append(steps[i].get("abstraction_level", "concrete"))
+        # Extract concept tokens (capitalized words > 2 chars)
+        concepts = []
+        for word in sent.split():
+            cleaned = re.sub(r'[^a-zA-Z]', '', word)
+            if cleaned and cleaned[0].isupper() and len(cleaned) > 2:
+                concepts.append(cleaned)
 
-    if steps:
-        abstraction_levels.insert(0, steps[0].get("abstraction_level", "concrete"))
+        step = ExplanationStep(
+            step_id=f"s{len(steps)+1}",
+            content=sent,
+            concepts=concepts,
+            abstraction_level=abs_level,
+            depends_on=[f"s{len(steps)}"] if steps else [],
+        )
+        steps.append(step.model_dump())
 
-    return {
-        "steps": steps,
-        "concept_transitions": concept_transitions,
-        "abstraction_levels": abstraction_levels,
-    }
+    return {"steps": steps}
 
 
 # ---------------------------------------------------------------------------
@@ -204,48 +153,48 @@ def user_state_tracker_node(state: CognitiveLoadState) -> dict:
 def load_estimator_node(state: CognitiveLoadState) -> dict:
     """Compute cognitive load from explanation structure.
 
-    Cognitive load is derived from:
-    - step_density: number of steps / total content length (normalized)
-    - concept_gap: average new concepts per transition
-    - memory_demand: max concurrent dependencies
+    Three dimensions:
+    - step_density: steps per 100 words of content
+    - concept_gap: average new concepts introduced per step transition
+    - memory_demand: max concurrent dependencies + concepts any step holds
 
-    Reads: steps, concept_transitions
+    On loop iterations, uses adapted_steps instead of original steps.
+
+    Reads: steps (or adapted_steps on loop iterations)
     Writes: load_metrics
     """
-    steps = state.get("steps", [])
-    transitions = state.get("concept_transitions", [])
+    # On loop iterations, use adapted_steps; on first pass, use steps
+    iteration = state.get("iteration", 0)
+    if iteration > 0 and state.get("adapted_steps"):
+        steps = state["adapted_steps"]
+    else:
+        steps = state.get("steps", [])
 
     if not steps:
-        metrics = CognitiveLoadMetrics()
-        return {"load_metrics": metrics.model_dump()}
+        return {"load_metrics": CognitiveLoadMetrics().model_dump()}
 
     # Step density: steps per 100 words
     total_words = sum(len(s.get("content", "").split()) for s in steps)
     step_density = (len(steps) / max(total_words, 1)) * 100
 
-    # Concept gap: average new concepts introduced per step
-    total_new_concepts = 0
-    for t in transitions:
-        # Count concepts mentioned in transition string
-        parts = t.split("introduced ")
-        if len(parts) > 1:
-            concepts = parts[1].split(", ")
-            total_new_concepts += len(concepts)
-    concept_gap = total_new_concepts / max(len(steps) - 1, 1) if len(steps) > 1 else 0
+    # Concept gap: average new concepts between consecutive steps
+    total_new = 0
+    for i in range(1, len(steps)):
+        prev = set(steps[i - 1].get("concepts", []))
+        curr = set(steps[i].get("concepts", []))
+        total_new += len(curr - prev)
+    concept_gap = total_new / max(len(steps) - 1, 1) if len(steps) > 1 else 0
 
-    # Memory demand: max number of dependencies any single step has
-    max_deps = 0
+    # Memory demand: max dependencies + concepts any single step holds
+    memory_demand = 0.0
     for s in steps:
-        deps = len(s.get("depends_on", []))
-        # Also count concepts that must be held
-        concepts_count = len(s.get("concepts", []))
-        max_deps = max(max_deps, deps + concepts_count)
-    memory_demand = float(max_deps)
+        load = len(s.get("depends_on", [])) + len(s.get("concepts", []))
+        memory_demand = max(memory_demand, float(load))
 
-    # Composite load: weighted combination (0-10 scale)
+    # Composite load (0-10 scale)
     total_load = min(
         (step_density * 2.0) + (concept_gap * 2.5) + (memory_demand * 1.5),
-        10.0
+        10.0,
     )
 
     metrics = CognitiveLoadMetrics(
@@ -264,7 +213,10 @@ def load_estimator_node(state: CognitiveLoadState) -> dict:
 def control_engine_node(state: CognitiveLoadState) -> dict:
     """Compare load vs user capacity and decide adaptation strategy.
 
-    Reads: load_metrics, user_state
+    User capacity = (understanding x 5) + (stability x 5) on 0-10 scale.
+    Deterministic decisions only.
+
+    Reads: load_metrics, user_state, steps (or adapted_steps)
     Writes: load_state, reasoning_mode, control_actions
     """
     load_metrics = state.get("load_metrics", {})
@@ -274,53 +226,74 @@ def control_engine_node(state: CognitiveLoadState) -> dict:
     understanding = user_state.get("understanding_level", 0.5)
     stability = user_state.get("reasoning_stability", 0.5)
 
-    # User capacity: higher understanding + stability = higher capacity
-    user_capacity = (understanding * 5.0) + (stability * 5.0)  # 0-10 scale
+    user_capacity = (understanding * 5.0) + (stability * 5.0)
 
-    # Compare load vs capacity
     control_actions = []
 
     if total_load > user_capacity + 1.5:
+        # --- OVERLOAD ---
         load_state = "overload"
         reasoning_mode = "fine-grained"
+
         control_actions.append(ControlAction(
             action="split_steps",
-            reason=f"Reducing complexity: splitting steps (load={total_load:.1f} > capacity={user_capacity:.1f})"
+            reason=f"Reducing complexity: splitting steps (load={total_load:.1f} > capacity={user_capacity:.1f})",
         ).model_dump())
+
+        # Find which steps are overloaded
+        iteration = state.get("iteration", 0)
+        steps = state["adapted_steps"] if iteration > 0 and state.get("adapted_steps") else state.get("steps", [])
+        for s in steps:
+            word_count = len(s.get("content", "").split())
+            if word_count > 25:
+                sid = s.get("step_id", "?")
+                control_actions.append(ControlAction(
+                    action="overload_at_step",
+                    reason=f"Overload detected at step {sid} ({word_count} words)",
+                ).model_dump())
+
         if load_metrics.get("concept_gap", 0) > 2.0:
             control_actions.append(ControlAction(
                 action="add_intermediate",
-                reason="Adding intermediate reasoning to bridge concept gaps"
+                reason="Adding intermediate reasoning to bridge concept gaps",
             ).model_dump())
+
         if load_metrics.get("memory_demand", 0) > 4.0:
             control_actions.append(ControlAction(
                 action="reduce_abstraction",
-                reason="Reducing abstraction to lower memory demand"
+                reason="Reducing abstraction to lower memory demand",
             ).model_dump())
+
     elif total_load < user_capacity - 2.0:
+        # --- UNDERLOAD ---
         load_state = "underload"
         reasoning_mode = "coarse"
+
         control_actions.append(ControlAction(
             action="merge_steps",
-            reason=f"Increasing abstraction: skipping basics (load={total_load:.1f} < capacity={user_capacity:.1f})"
+            reason=f"Increasing abstraction: skipping basics (load={total_load:.1f} < capacity={user_capacity:.1f})",
         ).model_dump())
+
         if load_metrics.get("step_density", 0) > 3.0:
             control_actions.append(ControlAction(
-                action="compress_reasoning",
-                reason="Compressing reasoning: merging obvious steps"
+                action="increase_abstraction",
+                reason="Compressing reasoning: raising abstraction level",
             ).model_dump())
+
     else:
+        # --- OPTIMAL ---
         load_state = "optimal"
         reasoning_mode = "medium"
+
         if total_load > user_capacity:
             control_actions.append(ControlAction(
                 action="add_checkpoints",
-                reason="Borderline load: adding checkpoints for safety"
+                reason="Borderline load: adding checkpoints for safety",
             ).model_dump())
         else:
             control_actions.append(ControlAction(
                 action="maintain",
-                reason="Load matches capacity — maintaining current structure"
+                reason="Load matches capacity -- maintaining current structure",
             ).model_dump())
 
     return {
@@ -331,20 +304,28 @@ def control_engine_node(state: CognitiveLoadState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Node 5: Granularity Controller
+# Node 5: Granularity Controller (includes restructuring)
 # ---------------------------------------------------------------------------
 
 def granularity_controller_node(state: CognitiveLoadState) -> dict:
-    """Adjust step size based on control decisions.
+    """Adjust step size and abstraction based on control decisions.
 
-    If overload: split large steps into smaller ones
-    If underload: merge consecutive simple steps
-    If optimal: keep as-is, possibly add checkpoints
+    Active abstraction control:
+      overload  -> split large steps, force concrete abstraction
+      underload -> merge short steps, raise abstraction level
+      optimal   -> keep as-is, possibly add checkpoints
 
-    Reads: steps, load_state, reasoning_mode, control_actions
+    Also cleans dependency references for consistency.
+
+    Reads: steps (or adapted_steps on loop), load_state, control_actions
     Writes: adapted_steps
     """
-    steps = state.get("steps", [])
+    iteration = state.get("iteration", 0)
+    if iteration > 0 and state.get("adapted_steps"):
+        steps = state["adapted_steps"]
+    else:
+        steps = state.get("steps", [])
+
     load_state = state.get("load_state", "optimal")
     actions = state.get("control_actions", [])
     action_types = {a.get("action", "") for a in actions}
@@ -355,14 +336,13 @@ def granularity_controller_node(state: CognitiveLoadState) -> dict:
     adapted = []
 
     if load_state == "overload":
-        # Split steps: break steps with long content into sub-steps
         for s in steps:
             content = s.get("content", "")
             words = content.split()
+
             if len(words) > 25 and "split_steps" in action_types:
-                # Split into two sub-steps
+                # Split into two sub-steps at nearest sentence boundary
                 mid = len(words) // 2
-                # Find nearest sentence boundary
                 split_idx = mid
                 for j in range(mid, min(mid + 10, len(words))):
                     if j > 0 and words[j - 1].endswith(('.', '!', '?', ',', ';')):
@@ -371,38 +351,39 @@ def granularity_controller_node(state: CognitiveLoadState) -> dict:
 
                 part1 = " ".join(words[:split_idx])
                 part2 = " ".join(words[split_idx:])
-
                 concepts = s.get("concepts", [])
-                step1 = ExplanationStep(
-                    step_id=f"{s['step_id']}a",
+                sid = s["step_id"]
+
+                adapted.append(ExplanationStep(
+                    step_id=f"{sid}a",
                     content=part1,
-                    concepts=concepts[:len(concepts) // 2 + 1],
+                    concepts=concepts[: len(concepts) // 2 + 1],
                     abstraction_level="concrete",
                     depends_on=s.get("depends_on", []),
-                )
-                step2 = ExplanationStep(
-                    step_id=f"{s['step_id']}b",
+                ).model_dump())
+                adapted.append(ExplanationStep(
+                    step_id=f"{sid}b",
                     content=part2,
-                    concepts=concepts[len(concepts) // 2 + 1:],
-                    abstraction_level=s.get("abstraction_level", "concrete"),
-                    depends_on=[f"{s['step_id']}a"],
-                )
-                adapted.append(step1.model_dump())
-                adapted.append(step2.model_dump())
+                    concepts=concepts[len(concepts) // 2 + 1 :],
+                    abstraction_level="concrete",
+                    depends_on=[f"{sid}a"],
+                ).model_dump())
             else:
-                # Reduce abstraction if needed
+                # Force abstraction down toward concrete
                 abs_level = s.get("abstraction_level", "concrete")
-                if "reduce_abstraction" in action_types and abs_level == "abstract":
-                    abs_level = "semi-abstract"
-                elif "reduce_abstraction" in action_types and abs_level == "semi-abstract":
-                    abs_level = "concrete"
-                adapted.append({
-                    **s,
-                    "abstraction_level": abs_level,
-                })
+                if abs_level != "concrete":
+                    abs_map = {"abstract": "semi-abstract", "semi-abstract": "concrete"}
+                    abs_level = abs_map.get(abs_level, abs_level)
+                adapted.append(ExplanationStep(
+                    step_id=s["step_id"],
+                    content=content,
+                    concepts=s.get("concepts", []),
+                    abstraction_level=abs_level,
+                    depends_on=s.get("depends_on", []),
+                ).model_dump())
 
     elif load_state == "underload":
-        # Merge steps: combine consecutive short steps
+        abs_up = {"concrete": "semi-abstract", "semi-abstract": "abstract"}
         i = 0
         while i < len(steps):
             if (
@@ -412,136 +393,108 @@ def granularity_controller_node(state: CognitiveLoadState) -> dict:
                 and len(steps[i + 1].get("content", "").split()) < 15
             ):
                 merged_content = (
-                    steps[i].get("content", "") + " " +
-                    steps[i + 1].get("content", "")
+                    steps[i].get("content", "") + " "
+                    + steps[i + 1].get("content", "")
                 )
                 merged_concepts = list(set(
-                    steps[i].get("concepts", []) +
-                    steps[i + 1].get("concepts", [])
+                    steps[i].get("concepts", [])
+                    + steps[i + 1].get("concepts", [])
                 ))
-                # Use higher abstraction level
-                abs_map = {"concrete": 0, "semi-abstract": 1, "abstract": 2}
-                rev_map = {0: "concrete", 1: "semi-abstract", 2: "abstract"}
-                abs1 = abs_map.get(steps[i].get("abstraction_level", "concrete"), 0)
-                abs2 = abs_map.get(steps[i + 1].get("abstraction_level", "concrete"), 0)
+                base_abs = steps[i].get("abstraction_level", "concrete")
+                new_abs = abs_up.get(base_abs, base_abs)
 
-                merged_step = ExplanationStep(
+                adapted.append(ExplanationStep(
                     step_id=steps[i]["step_id"],
                     content=merged_content.strip(),
                     concepts=merged_concepts,
-                    abstraction_level=rev_map.get(max(abs1, abs2), "concrete"),
+                    abstraction_level=new_abs,
                     depends_on=steps[i].get("depends_on", []),
-                )
-                adapted.append(merged_step.model_dump())
+                ).model_dump())
                 i += 2
             else:
-                adapted.append(steps[i])
+                s = steps[i]
+                abs_level = s.get("abstraction_level", "concrete")
+                if "increase_abstraction" in action_types:
+                    abs_level = abs_up.get(abs_level, abs_level)
+                adapted.append(ExplanationStep(
+                    step_id=s["step_id"],
+                    content=s.get("content", ""),
+                    concepts=s.get("concepts", []),
+                    abstraction_level=abs_level,
+                    depends_on=s.get("depends_on", []),
+                ).model_dump())
                 i += 1
+
     else:
-        # Optimal: keep as-is, maybe add checkpoints
+        # Optimal -- keep structure, optionally add checkpoints
         for i, s in enumerate(steps):
-            adapted.append(s)
-            # Add checkpoint after every 3 steps if borderline
+            adapted.append(ExplanationStep(
+                step_id=s["step_id"],
+                content=s.get("content", ""),
+                concepts=s.get("concepts", []),
+                abstraction_level=s.get("abstraction_level", "concrete"),
+                depends_on=s.get("depends_on", []),
+            ).model_dump())
             if (
                 "add_checkpoints" in action_types
                 and (i + 1) % 3 == 0
                 and i + 1 < len(steps)
             ):
-                checkpoint = ExplanationStep(
-                    step_id=f"checkpoint_{i+1}",
-                    content=f"[Checkpoint: Verify understanding of steps up to this point]",
+                adapted.append(ExplanationStep(
+                    step_id=f"checkpoint_{i + 1}",
+                    content="[Checkpoint: Verify understanding of steps up to this point]",
                     concepts=[],
                     abstraction_level="concrete",
                     depends_on=[s["step_id"]],
-                )
-                adapted.append(checkpoint.model_dump())
+                ).model_dump())
+
+    # Clean dependency references
+    valid_ids = {s.get("step_id", "") for s in adapted}
+    for s in adapted:
+        s["depends_on"] = [d for d in s.get("depends_on", []) if d in valid_ids]
 
     return {"adapted_steps": adapted}
 
 
 # ---------------------------------------------------------------------------
-# Node 6: Explanation Restructurer
+# Node 6: Feedback Manager
 # ---------------------------------------------------------------------------
 
-def explanation_restructurer_node(state: CognitiveLoadState) -> dict:
-    """Apply structural changes to the adapted steps.
-
-    Ensures step IDs are consistent, dependencies are valid,
-    and the explanation flows correctly.
-
-    Reads: adapted_steps, reasoning_mode
-    Writes: adapted_steps (cleaned/validated)
-    """
-    adapted = state.get("adapted_steps", [])
-    reasoning_mode = state.get("reasoning_mode", "medium")
-
-    if not adapted:
-        return {"adapted_steps": []}
-
-    # Re-index steps for consistency
-    valid_ids = {s.get("step_id", "") for s in adapted}
-
-    cleaned = []
-    for s in adapted:
-        # Clean dependencies: remove references to non-existent steps
-        deps = [d for d in s.get("depends_on", []) if d in valid_ids]
-        cleaned_step = ExplanationStep(
-            step_id=s.get("step_id", f"s{len(cleaned)+1}"),
-            content=s.get("content", ""),
-            concepts=s.get("concepts", []),
-            abstraction_level=s.get("abstraction_level", "concrete"),
-            depends_on=deps,
-        )
-        cleaned.append(cleaned_step.model_dump())
-
-    return {"adapted_steps": cleaned}
-
-
-# ---------------------------------------------------------------------------
-# Node 7: Feedback Loop Manager
-# ---------------------------------------------------------------------------
-
-def feedback_loop_manager_node(state: CognitiveLoadState) -> dict:
+def feedback_manager_node(state: CognitiveLoadState) -> dict:
     """Update user state and determine whether to loop.
 
     After adaptation:
-    1. Update user state based on current interaction
-    2. Decide if another iteration is needed (load still not optimal)
+    1. Update user state based on load outcome
+    2. Decide if another iteration is needed
     3. Save user state for future interactions
 
-    Reads: user_state, load_state, load_metrics, iteration, max_iterations
+    Reads: user_state, load_state, iteration, max_iterations
     Writes: user_state, iteration, converged
     """
     user_state = state.get("user_state", {})
     load_state = state.get("load_state", "optimal")
-    load_metrics = state.get("load_metrics", {})
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 3)
 
-    # Update user state based on this interaction
     interaction_count = user_state.get("interaction_count", 0) + 1
+    understanding = user_state.get("understanding_level", 0.5)
+    stability = user_state.get("reasoning_stability", 0.5)
+    learning_speed = user_state.get("learning_speed", 0.5)
+    overload_signals = user_state.get("overload_signals", 0)
 
     if load_state == "overload":
-        # Decrease understanding estimate, increase overload signals
-        understanding = max(0.0, user_state.get("understanding_level", 0.5) - 0.05)
-        overload_signals = user_state.get("overload_signals", 0) + 1
-        stability = max(0.0, user_state.get("reasoning_stability", 0.5) - 0.05)
+        understanding = max(0.0, understanding - 0.05)
+        stability = max(0.0, stability - 0.05)
+        overload_signals += 1
     elif load_state == "underload":
-        # Increase understanding estimate
-        understanding = min(1.0, user_state.get("understanding_level", 0.5) + 0.05)
-        overload_signals = max(0, user_state.get("overload_signals", 0) - 1)
-        stability = min(1.0, user_state.get("reasoning_stability", 0.5) + 0.03)
+        understanding = min(1.0, understanding + 0.05)
+        stability = min(1.0, stability + 0.03)
+        overload_signals = max(0, overload_signals - 1)
     else:
-        understanding = user_state.get("understanding_level", 0.5)
-        overload_signals = user_state.get("overload_signals", 0)
-        stability = min(1.0, user_state.get("reasoning_stability", 0.5) + 0.02)
-
-    # Learning speed: based on how quickly we reach optimal
-    learning_speed = user_state.get("learning_speed", 0.5)
-    if load_state == "optimal":
+        stability = min(1.0, stability + 0.02)
         learning_speed = min(1.0, learning_speed + 0.02)
 
-    updated_state = UserCognitiveState(
+    updated = UserCognitiveState(
         user_id=user_state.get("user_id", "default"),
         understanding_level=round(understanding, 3),
         reasoning_stability=round(stability, 3),
@@ -549,12 +502,10 @@ def feedback_loop_manager_node(state: CognitiveLoadState) -> dict:
         overload_signals=overload_signals,
         interaction_count=interaction_count,
     )
-    updated_dict = updated_state.model_dump()
+    updated_dict = updated.model_dump()
 
-    # Save to persistent store
     _save_user_state(updated_dict["user_id"], updated_dict)
 
-    # Decide convergence
     new_iteration = iteration + 1
     converged = (load_state == "optimal") or (new_iteration >= max_iterations)
 
@@ -581,36 +532,31 @@ def _should_loop(state: CognitiveLoadState) -> str:
 # ---------------------------------------------------------------------------
 
 def build_cognitive_load_graph():
-    """Build and compile the LangGraph StateGraph for cognitive load optimization.
+    """Build and compile the LangGraph StateGraph (6 nodes, cyclic).
 
-    Returns a compiled graph with cyclic feedback loop:
-        START → explanation_analyzer → user_state_tracker → load_estimator
-        → control_engine → granularity_controller → explanation_restructurer
-        → feedback_loop_manager → (loop back to load_estimator OR END)
+    START -> explanation_analyzer -> user_state_tracker -> load_estimator
+    -> control_engine -> granularity_controller
+    -> feedback_manager -> (loop back to load_estimator OR END)
     """
     graph = StateGraph(CognitiveLoadState)
 
-    # Register nodes
     graph.add_node("explanation_analyzer", explanation_analyzer_node)
     graph.add_node("user_state_tracker", user_state_tracker_node)
     graph.add_node("load_estimator", load_estimator_node)
     graph.add_node("control_engine", control_engine_node)
     graph.add_node("granularity_controller", granularity_controller_node)
-    graph.add_node("explanation_restructurer", explanation_restructurer_node)
-    graph.add_node("feedback_loop_manager", feedback_loop_manager_node)
+    graph.add_node("feedback_manager", feedback_manager_node)
 
-    # Edges
     graph.add_edge(START, "explanation_analyzer")
     graph.add_edge("explanation_analyzer", "user_state_tracker")
     graph.add_edge("user_state_tracker", "load_estimator")
     graph.add_edge("load_estimator", "control_engine")
     graph.add_edge("control_engine", "granularity_controller")
-    graph.add_edge("granularity_controller", "explanation_restructurer")
-    graph.add_edge("explanation_restructurer", "feedback_loop_manager")
+    graph.add_edge("granularity_controller", "feedback_manager")
 
     # Cyclic feedback: loop back to load_estimator or end
     graph.add_conditional_edges(
-        "feedback_loop_manager",
+        "feedback_manager",
         _should_loop,
         {"loop": "load_estimator", "end": END},
     )
@@ -625,12 +571,13 @@ def build_cognitive_load_graph():
 class CognitiveLoadOptimizer:
     """Entry point for cognitive load optimization.
 
-    Holds runtime dependencies and invokes the LangGraph.
+    Holds the compiled LangGraph and invokes it.
     All logic lives in the graph nodes above.
     """
 
     def __init__(self, llm_client=None):
-        self.llm_client = llm_client
+        # LLM client accepted for interface compatibility but NOT used.
+        # The optimizer is deterministic -- no LLM dependency.
         self.graph = build_cognitive_load_graph()
 
     def optimize(self, explanation: str, user_id: str = "default") -> dict:
@@ -648,12 +595,9 @@ class CognitiveLoadOptimizer:
             raise ValueError("Explanation text is empty.")
 
         initial_state: CognitiveLoadState = {
-            "_llm_client": self.llm_client,
             "raw_explanation": explanation,
             "user_id": user_id,
             "steps": [],
-            "concept_transitions": [],
-            "abstraction_levels": [],
             "user_state": {},
             "load_metrics": {},
             "load_state": "optimal",
