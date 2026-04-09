@@ -5,10 +5,10 @@
 ## Core Mechanism
 
 ```
-Input → Claims → Evidence → Verification → Explanation
+Input → Claims → Evidence → Verification → Stress Test (conditional) → Explanation
 ```
 
-A user submits text. The system decomposes it into atomic claims, retrieves evidence from uploaded documents, verifies each claim against that evidence, and generates a human-readable explanation for every verdict. No claim is accepted or rejected without document-backed reasoning.
+A user submits text. The system decomposes it into atomic claims, retrieves evidence from uploaded documents, verifies each claim against that evidence, optionally stress-tests reasoning for robustness, and generates a human-readable explanation for every verdict. No claim is accepted or rejected without document-backed reasoning.
 
 ## System Architecture
 
@@ -29,8 +29,9 @@ graph TB
         CE[Claim Extractor Agent]
         RA[Retrieval Agent]
         VA[Verification Agent]
+        ST[Stress Test Engine<br/>conditional]
         EA[Explanation Agent]
-        PL --> CE --> RA --> VA --> EA
+        PL --> CE --> RA --> VA --> ST --> EA
     end
 
     subgraph "Layer 4 — Data & Knowledge Layer"
@@ -43,6 +44,7 @@ graph TB
     UI <-->|REST API| API
     API --> PL
     EA --> API
+    ST --> API
     RA <--> EMB
     EMB <--> VEC
     API <--> SQL
@@ -120,7 +122,10 @@ sequenceDiagram
     Note over PIP: Stage 4 — Verifier
     PIP->>PIP: Score claims → supported/weakly_supported/unsupported
 
-    Note over PIP: Stage 5 — Explainer
+    Note over PIP: Stage 5 (conditional) — Stress Test
+    PIP->>PIP: If run_stress_test: analyze reasoning robustness
+
+    Note over PIP: Stage 6 — Explainer
     PIP->>PIP: Generate explanations (LLM or rules)
 
     PIP-->>API: Final results with claims, evidence, verdicts
@@ -153,6 +158,35 @@ sequenceDiagram
     FE-->>U: Updated claim cards
 ```
 
+### Stress Test Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant PIP as Stress Test Engine
+
+    U->>FE: Submit problem + answer + confidence
+    FE->>API: POST /evaluate-reasoning {problem, student_answer, confidence}
+    API->>PIP: pipeline.evaluate_reasoning(problem, student_answer, confidence)
+
+    Note over PIP: Extract concepts from claims
+    Note over PIP: Extract hidden assumptions (LLM + rules)
+    Note over PIP: Extract constraints from problem/answer
+    Note over PIP: Detect reasoning weaknesses
+    Note over PIP: Generate edge cases (hybrid)
+    Note over PIP: Generate adversarial scenarios
+    Note over PIP: Evaluate reasoning under each scenario
+    Note over PIP: Compute robustness score
+    Note over PIP: Convert failures to adversarial questions
+    Note over PIP: Format structured output
+
+    PIP-->>API: Stress test results
+    API-->>FE: EvaluateReasoningResponse
+    FE-->>U: Robustness score, failures, weaknesses, questions
+```
+
 ## User Flow
 
 1. **Upload Documents** — User uploads PDF or TXT files that form the knowledge base.
@@ -160,6 +194,7 @@ sequenceDiagram
 3. **View Results** — System displays each extracted claim with a status badge, confidence score, evidence snippets, and explanation.
 4. **Provide Feedback** — User can accept, reject, or edit individual claims.
 5. **Review History** — User can browse past validation sessions with full results.
+6. **Stress Test Reasoning** — User submits a problem and student answer with confidence level. System stress-tests the reasoning for edge cases, weaknesses, and adversarial scenarios, returning a robustness score and targeted questions.
 
 ## API Endpoint Summary
 
@@ -173,6 +208,7 @@ sequenceDiagram
 | `POST` | `/submit-feedback` | Submit accept/reject | `{claim_id, session_id, decision}` | `FeedbackResponse` |
 | `POST` | `/edit-claim` | Edit & re-validate claim | `{claim_id, session_id, new_claim_text}` | `ProcessInputResponse` |
 | `GET` | `/history` | Get full history | — | `{sessions: [...]}` |
+| `POST` | `/evaluate-reasoning` | Stress-test reasoning robustness | `{problem, student_answer, confidence}` | `EvaluateReasoningResponse` |
 
 ## Output Contract
 
@@ -201,6 +237,32 @@ Every verified claim returns this structure:
 | `supported` | ≥ 0.7 | Strong evidence match in documents |
 | `weakly_supported` | 0.4 – 0.69 | Partial or indirect evidence found |
 | `unsupported` | < 0.4 | No sufficient evidence in documents |
+
+### Stress Test Output Contract
+
+The `/evaluate-reasoning` endpoint returns this structure:
+
+```json
+{
+  "stress_test_results": [
+    "FAILS when: x = 0 (at: division step) — Division by zero"
+  ],
+  "weakness_summary": [
+    {
+      "type": "overgeneralization",
+      "detail": "Assumes all values are positive without justification"
+    }
+  ],
+  "robustness_summary": {
+    "robustness_score": 0.4,
+    "summary": "Reasoning fails under multiple edge cases",
+    "level": "low"
+  },
+  "adversarial_questions": [
+    "What happens when x = 0?"
+  ]
+}
+```
 
 ## Tech Stack
 
@@ -274,7 +336,7 @@ The frontend starts on `http://localhost:5173` and proxies `/api` requests to th
 
 1. **No claim is verified without document evidence.** The system never uses pre-trained knowledge for verification.
 2. **Every verdict is traceable.** Each status links back to specific document snippets and page numbers.
-3. **The pipeline order is non-negotiable.** Planner → Claim Extractor → Retriever → Verifier → Explainer.
+3. **The pipeline order is non-negotiable.** Planner → Claim Extractor → Retriever → Verifier → Stress Test (conditional) → Explainer.
 4. **LLM usage is restricted.** Only the Claim Extractor and Explainer use LLM calls. Verification is purely algorithmic.
 5. **Fallback behavior is deterministic.** If the LLM is unavailable, rule-based extraction and explanation are used.
 6. **All sessions are audited.** Every input, claim, result, and feedback action is stored in SQLite.
@@ -305,7 +367,19 @@ evilearn/
 │   ├── requirements.txt               # Python dependencies
 │   ├── ai_engine/
 │   │   ├── README.md                  # AI Engine documentation
-│   │   └── pipeline.py                # LangGraph graph-native agents + pipeline
+│   │   ├── pipeline.py                # LangGraph graph-native agents + pipeline
+│   │   └── stress_test_agent/         # Knowledge Stress-Test Engine
+│   │       ├── stress_test_agent.py   # Main orchestrator
+│   │       ├── concept_extractor.py   # Extract key concepts from claims
+│   │       ├── assumption_extractor.py# Extract hidden assumptions (LLM + rules)
+│   │       ├── constraint_extractor.py# Extract constraints from problem/answer
+│   │       ├── weakness_analyzer.py   # Detect reasoning weaknesses
+│   │       ├── edge_case_generator.py # Generate boundary/edge cases (hybrid)
+│   │       ├── adversarial_engine.py  # Generate adversarial scenarios
+│   │       ├── failure_analyzer.py    # Evaluate reasoning under scenarios
+│   │       ├── robustness_evaluator.py# Compute robustness score
+│   │       ├── adversarial_question_agent.py # Convert failures to questions
+│   │       └── output_formatter.py    # Format final structured output
 │   └── data_layer/
 │       ├── README.md                  # Data Layer documentation
 │       ├── document_processor.py      # PDF/text extraction
@@ -326,5 +400,7 @@ evilearn/
             ├── ResultsDisplay.jsx     # Results summary & claim list
             ├── ClaimCard.jsx          # Individual claim display
             ├── EvidenceViewer.jsx     # Evidence snippet display
-            └── HistoryDashboard.jsx   # Session history browser
+            ├── HistoryDashboard.jsx   # Session history browser
+            ├── StressTestWorkspace.jsx# Stress test input form
+            └── StressTestResults.jsx  # Stress test results display
 ```
