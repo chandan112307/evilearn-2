@@ -17,17 +17,20 @@ graph LR
     CE -->|has_claims| R[retriever_node]
     CE -->|no_claims| END1((END))
     R --> V[verifier_node]
-    V --> E[explainer_node]
+    V -->|run_stress_test| ST[stress_test_node]
+    V -->|skip_stress_test| E[explainer_node]
+    ST --> E[explainer_node]
     E --> END2((END))
 
     style P fill:#e3f2fd
     style CE fill:#fff3e0
     style R fill:#e8f5e9
     style V fill:#fce4ec
+    style ST fill:#fff9c4
     style E fill:#f3e5f5
 ```
 
-The pipeline is a strict 5-stage sequence implemented as a LangGraph `StateGraph`. Each agent is a **pure function** registered as a node via `graph.add_node()`. Edges are strictly sequential except for the conditional edge after claim extraction (which short-circuits to END if no claims are extracted).
+The pipeline is a strict 5-stage sequence (with an optional stress test stage) implemented as a LangGraph `StateGraph`. Each agent is a **pure function** registered as a node via `graph.add_node()`. Edges are strictly sequential except for the conditional edge after claim extraction (which short-circuits to END if no claims are extracted) and the conditional edge after verification (which routes to the stress test node when `run_stress_test` is true).
 
 ## File Structure
 
@@ -35,10 +38,22 @@ The pipeline is a strict 5-stage sequence implemented as a LangGraph `StateGraph
 backend/ai_engine/
 ├── __init__.py      # Exports: ValidationPipeline, build_validation_graph
 ├── pipeline.py      # ALL agent logic — pure functions + StateGraph + graph builder
+├── stress_test_agent/  # Knowledge Stress-Test Engine
+│   ├── stress_test_agent.py       # Main orchestrator
+│   ├── concept_extractor.py       # Extract key concepts from claims
+│   ├── assumption_extractor.py    # Extract hidden assumptions (LLM + rules)
+│   ├── constraint_extractor.py    # Extract constraints from problem/answer
+│   ├── weakness_analyzer.py       # Detect reasoning weaknesses
+│   ├── edge_case_generator.py     # Generate boundary/edge cases (hybrid)
+│   ├── adversarial_engine.py      # Generate adversarial scenarios
+│   ├── failure_analyzer.py        # Evaluate reasoning under each scenario
+│   ├── robustness_evaluator.py    # Compute robustness score
+│   ├── adversarial_question_agent.py  # Convert failures to adversarial questions
+│   └── output_formatter.py        # Format final structured output
 └── README.md        # This file
 ```
 
-There is **no `agents/` directory**. All agent logic is defined inline in `pipeline.py` as top-level pure functions.
+There is **no `agents/` directory**. Core pipeline agent logic is defined inline in `pipeline.py` as top-level pure functions. The stress test engine is modularized in the `stress_test_agent/` directory.
 
 ## Pipeline State
 
@@ -61,6 +76,9 @@ class PipelineState(TypedDict):
     verification_results: list[dict]            # Written by verifier_node (VerificationResult)
     final_results: list[dict]                   # Written by explainer_node (FinalClaimResult)
     error: Optional[str]                        # Error field
+    problem: Optional[str]                      # Written by evaluate_reasoning (stress test input)
+    run_stress_test: bool                       # Flag to enable stress test node
+    stress_test_output: Optional[dict]          # Written by stress_test_node
 ```
 
 ### State Discipline
@@ -80,7 +98,9 @@ stateDiagram-v2
     claim_extractor_node --> retriever_node: + claims[]
     claim_extractor_node --> [*]: no claims (short-circuit)
     retriever_node --> verifier_node: + evidence_map{}
-    verifier_node --> explainer_node: + verification_results[]
+    verifier_node --> stress_test_node: + verification_results[] (if run_stress_test)
+    verifier_node --> explainer_node: + verification_results[] (if skip)
+    stress_test_node --> explainer_node: + stress_test_output{}
     explainer_node --> [*]: + final_results[]
 ```
 
@@ -210,7 +230,51 @@ stateDiagram-v2
 
 ---
 
-### Node 5: `explainer_node(state)` — Explanation Generation
+### Node 5.5: `stress_test_node(state)` — Knowledge Stress-Test Engine (Conditional)
+
+**Role:** Analyze reasoning robustness by extracting assumptions, generating edge cases and adversarial scenarios, evaluating failures, and computing a robustness score. Only runs when `run_stress_test` is true in state.
+
+| Property | Value |
+|----------|-------|
+| **Reads** | `raw_input`, `claims`, `verification_results`, `problem`, `run_stress_test` |
+| **Writes** | `stress_test_output` |
+| **Uses LLM** | Yes (assumption extraction, edge case generation, adversarial scenarios, failure analysis, question generation) |
+| **Deterministic** | No |
+
+**Sub-module pipeline (executed sequentially by `stress_test_agent.py`):**
+
+| Step | Module | Purpose |
+|------|--------|---------|
+| 1 | `concept_extractor.py` | Extract key concepts from claims |
+| 2 | `assumption_extractor.py` | Extract hidden assumptions using LLM + rule-based hybrid |
+| 3 | `constraint_extractor.py` | Extract constraints from problem and answer |
+| 4 | `weakness_analyzer.py` | Detect reasoning weaknesses (overgeneralization, missing steps, etc.) |
+| 5 | `edge_case_generator.py` | Generate boundary/edge cases using hybrid approach |
+| 6 | `adversarial_engine.py` | Generate adversarial scenarios that challenge the reasoning |
+| 7 | `failure_analyzer.py` | Evaluate reasoning under each scenario (evaluation loop) |
+| 8 | `robustness_evaluator.py` | Compute robustness score from failure analysis |
+| 9 | `adversarial_question_agent.py` | Convert detected failures to targeted adversarial questions |
+| 10 | `output_formatter.py` | Format final structured output |
+
+**Output structure:**
+```json
+{
+  "stress_test_results": ["FAILS when: x = 0 (at: division step) — Division by zero"],
+  "weakness_summary": [{"type": "overgeneralization", "detail": "..."}],
+  "robustness_summary": {"robustness_score": 0.4, "summary": "...", "level": "low"},
+  "adversarial_questions": ["What happens when x = 0?"]
+}
+```
+
+**Rules:**
+- Only runs when `run_stress_test` is `true` in state (conditional edge from verifier).
+- When triggered via `POST /evaluate-reasoning`, the pipeline sets `run_stress_test = true`.
+- Does not modify `verification_results` or `final_results` — writes only to `stress_test_output`.
+- If any sub-module fails, partial results are still returned where possible.
+
+---
+
+### Node 6: `explainer_node(state)` — Explanation Generation
 
 **Role:** Generate human-readable explanations for each verification result.
 
@@ -253,11 +317,14 @@ graph TB
         P[planner_node] --> CE[claim_extractor_node]
         CE --> RN[retriever_node]
         RN --> VN[verifier_node]
+        VN -->|conditional| ST[stress_test_node]
         VN --> EN[explainer_node]
+        ST --> EN
     end
 
     LLM[LLM Client<br/>Groq / OpenAI] -.->|used by| CE
     LLM -.->|used by| EN
+    LLM -.->|used by| ST
     EMB[EmbeddingService<br/>LLM API] -.->|query embeddings| RN
     VS[VectorStore<br/>ChromaDB<br/>storage only] -->|queried by| RN
 
@@ -280,6 +347,7 @@ def build_validation_graph():
     graph.add_node("claim_extractor", claim_extractor_node)
     graph.add_node("retriever", retriever_node)
     graph.add_node("verifier", verifier_node)
+    graph.add_node("stress_test", stress_test_node)
     graph.add_node("explainer", explainer_node)
 
     # Strict sequential edges
@@ -290,7 +358,11 @@ def build_validation_graph():
         {"has_claims": "retriever", "no_claims": END},
     )
     graph.add_edge("retriever", "verifier")
-    graph.add_edge("verifier", "explainer")
+    graph.add_conditional_edges(
+        "verifier", check_stress_test,
+        {"run_stress_test": "stress_test", "skip_stress_test": "explainer"},
+    )
+    graph.add_edge("stress_test", "explainer")
     graph.add_edge("explainer", END)
 
     return graph.compile()
@@ -350,7 +422,8 @@ def build_validation_graph():
 4. **verifier_node cannot use LLM.** Status is assigned purely from evidence relevance scores.
 5. **explainer_node cannot change verification.** It only generates text for existing decisions.
 6. **No backward flow.** No node can send data back to a previous node.
-7. **LLM usage is restricted** to claim_extractor_node and explainer_node only.
+7. **LLM usage is restricted** to claim_extractor_node, stress_test_node, and explainer_node only.
+8. **stress_test_node cannot modify verification results.** It only analyzes reasoning robustness and writes to `stress_test_output`.
 
 ## Edge Case Handling
 
@@ -375,6 +448,7 @@ def build_validation_graph():
 | claim_extractor_node | **Yes** | Intelligent claim decomposition | Sentence splitting |
 | retriever_node | **No** | — | — |
 | verifier_node | **No** | — | — |
+| stress_test_node | **Yes** | Assumption extraction, edge case generation, adversarial scenarios, failure analysis, question generation | Rule-based analysis |
 | explainer_node | **Yes** | Natural language explanation | Template-based explanation |
 
 **Rationale:** Verification must be deterministic and reproducible. LLMs are only used where human-like language understanding (extraction) or generation (explanation) is required. The verification decision itself is always evidence-based.

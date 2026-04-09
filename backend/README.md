@@ -283,6 +283,58 @@ graph TB
 }
 ```
 
+---
+
+### Evaluate Reasoning (Stress Test)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/evaluate-reasoning` | Stress-test reasoning robustness for a student answer |
+
+**Request Schema — `EvaluateReasoningRequest`:**
+```json
+{
+  "problem": "Solve for x: 2x + 4 = 10",
+  "student_answer": "x = 3 because we divide both sides by 2",
+  "confidence": 80
+}
+```
+
+| Field | Type | Validation |
+|-------|------|------------|
+| `problem` | `string` | Optional — the problem being solved |
+| `student_answer` | `string` | Required, `min_length=1` — the student's reasoning/answer |
+| `confidence` | `integer` | Required, `0–100` — student's self-reported confidence |
+
+**Response Schema — `EvaluateReasoningResponse`:**
+```json
+{
+  "stress_test_results": [
+    "FAILS when: x = 0 (at: division step) — Division by zero"
+  ],
+  "weakness_summary": [
+    {
+      "type": "overgeneralization",
+      "detail": "Assumes all values are positive without justification"
+    }
+  ],
+  "robustness_summary": {
+    "robustness_score": 0.4,
+    "summary": "Reasoning fails under multiple edge cases",
+    "level": "low"
+  },
+  "adversarial_questions": [
+    "What happens when x = 0?"
+  ]
+}
+```
+
+**Error responses:**
+| Code | Condition |
+|------|-----------|
+| 400 | Empty or missing student answer |
+| 500 | Stress test engine failure |
+
 ## Pipeline Orchestration
 
 ```mermaid
@@ -299,6 +351,7 @@ sequenceDiagram
     FastAPI->>Pipeline: pipeline.execute(input_text)
     Pipeline->>Graph: graph.invoke(initial_state)
     Note over Graph: 5-stage sequential execution<br/>All data validated via Pydantic
+    Note over Graph: + conditional stress_test_node
     Graph-->>Pipeline: final_state
     Pipeline->>Pipeline: Validate output via FinalClaimResult
     Pipeline-->>FastAPI: {input_type, claims[]}
@@ -307,6 +360,24 @@ sequenceDiagram
     FastAPI->>DB: insert_claims() (validated only)
     FastAPI->>DB: insert_results() (validated only)
     FastAPI-->>Client: ProcessInputResponse
+```
+
+### Stress Test Orchestration
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FastAPI as FastAPI (app.py)
+    participant Pipeline as ValidationPipeline
+
+    Client->>FastAPI: POST /evaluate-reasoning
+    FastAPI->>FastAPI: Validate request (EvaluateReasoningRequest)
+    FastAPI->>Pipeline: pipeline.evaluate_reasoning(problem, student_answer, confidence)
+    Pipeline->>Pipeline: Run stress_test_node (conditional)
+    Note over Pipeline: Concept extraction → Assumption extraction<br/>→ Constraint extraction → Weakness analysis<br/>→ Edge case generation → Adversarial scenarios<br/>→ Failure analysis → Robustness scoring<br/>→ Adversarial question generation
+    Pipeline-->>FastAPI: stress_test_output
+    FastAPI->>FastAPI: Validate via EvaluateReasoningResponse
+    FastAPI-->>Client: EvaluateReasoningResponse
 ```
 
 ## Request & Output Validation (Pydantic Schemas)
@@ -318,6 +389,7 @@ All request bodies are validated by Pydantic v2 models defined in `schemas.py`:
 | `ProcessInputRequest` | `input_text` | `min_length=1` |
 | `FeedbackRequest` | `claim_id`, `session_id`, `decision` | `decision` matches `^(accept\|reject)$` |
 | `EditClaimRequest` | `claim_id`, `session_id`, `new_claim_text` | `new_claim_text` has `min_length=1` |
+| `EvaluateReasoningRequest` | `problem`, `student_answer`, `confidence` | `student_answer` has `min_length=1`, `confidence` ∈ [0, 100] |
 
 **Output validation (BEFORE storage):**
 
@@ -327,6 +399,9 @@ All request bodies are validated by Pydantic v2 models defined in `schemas.py`:
 | `FinalClaimResult` | Same as ClaimResult | Pipeline-internal validation at every stage |
 | `HistoryClaimItem` | `claim_id`, `session_id`, `claim_text` | Fully typed, no loose dicts |
 | `HistoryFeedbackItem` | `feedback_id`, `claim_id`, `session_id`, `user_decision`, `created_at` | Fully typed |
+| `EvaluateReasoningResponse` | `stress_test_results`, `weakness_summary`, `robustness_summary`, `adversarial_questions` | All fields required, typed |
+| `WeaknessItem` | `type`, `detail` | Both non-empty strings |
+| `RobustnessSummary` | `robustness_score`, `summary`, `level` | `robustness_score` ∈ [0.0, 1.0], `level` ∈ {low, medium, high} |
 
 All pipeline output is validated via `ClaimResult` **before** being inserted into the database. If validation fails, the request is rejected with HTTP 500.
 

@@ -4,7 +4,7 @@
 
 ## Overview
 
-The frontend is a React single-page application built with Vite and Tailwind CSS. It provides three main views: a Validation Workspace for submitting text, a Documents view for managing the knowledge base, and a History Dashboard for reviewing past sessions. All data is fetched from the FastAPI backend via a REST API client.
+The frontend is a React single-page application built with Vite and Tailwind CSS. It provides four main views: a Validation Workspace for submitting text, a Documents view for managing the knowledge base, a Stress Test workspace for testing reasoning robustness, and a History Dashboard for reviewing past sessions. All data is fetched from the FastAPI backend via a REST API client.
 
 ## Technology
 
@@ -29,6 +29,8 @@ graph TB
         VW[ValidationWorkspace<br/>Text input & submission]
         RD[ResultsDisplay<br/>Summary bar & claim list]
         HD[HistoryDashboard<br/>Session list & details]
+        STW[StressTestWorkspace<br/>Stress test input form]
+        STR[StressTestResults<br/>Robustness & failures display]
     end
 
     subgraph "Shared Components"
@@ -44,6 +46,8 @@ graph TB
     App --> VW
     App --> RD
     App --> HD
+    App --> STW
+    STW --> STR
     RD --> CC
     CC --> EV
 
@@ -51,6 +55,7 @@ graph TB
     VW --> API
     CC --> API
     HD --> API
+    STW --> API
 
     API -->|REST| BE[Backend API<br/>FastAPI]
 ```
@@ -63,6 +68,8 @@ graph TD
     App --> ValidationWorkspace
     App --> ResultsDisplay
     App --> HistoryDashboard
+    App --> StressTestWorkspace
+    StressTestWorkspace --> StressTestResults
     ResultsDisplay --> ClaimCard
     ClaimCard --> EvidenceViewer
 ```
@@ -75,13 +82,14 @@ The root component managing tab navigation and global state.
 
 | State | Type | Purpose |
 |-------|------|---------|
-| `activeTab` | `string` | Current view: `workspace`, `documents`, or `history` |
+| `activeTab` | `string` | Current view: `workspace`, `documents`, `stress-test`, or `history` |
 | `results` | `object \| null` | Latest validation results from pipeline |
 | `sessionId` | `string \| null` | Current session ID for feedback |
 
 **Navigation tabs:**
 - **Validation Workspace** (default) — Input text and view results
 - **Documents** — Upload and manage knowledge base files
+- **Stress Test** — Test reasoning robustness with adversarial analysis
 - **History** — Browse past validation sessions
 
 **Data flow:**
@@ -242,6 +250,49 @@ Browsable list of past validation sessions with expandable results.
 
 **Empty state:** "No validation history yet. Submit text for validation to start building your history."
 
+---
+
+### StressTestWorkspace (`components/StressTestWorkspace.jsx`)
+
+Form interface for submitting reasoning to the stress-test engine.
+
+| State | Type | Purpose |
+|-------|------|---------|
+| `problem` | `string` | Optional problem statement |
+| `studentAnswer` | `string` | Student's reasoning/answer (required) |
+| `confidence` | `number` | Confidence slider value (0–100) |
+| `processing` | `boolean` | Stress test in progress |
+| `results` | `object \| null` | Stress test results from API |
+| `error` | `string` | Error message |
+
+**Behavior:**
+1. Problem text area (optional) for the problem being solved.
+2. Student answer text area (required) for the reasoning to stress-test.
+3. Confidence slider (0–100) for the student's self-reported confidence level.
+4. "Stress Test" button triggers `evaluateReasoning(problem, studentAnswer, confidence)`.
+5. Button is disabled when `processing` or student answer is empty.
+6. On success, passes results to `StressTestResults` child component.
+7. On error, displays error message.
+
+---
+
+### StressTestResults (`components/StressTestResults.jsx`)
+
+Displays stress test results including robustness score, failure scenarios, weaknesses, and adversarial questions.
+
+**Props:**
+| Prop | Type | Description |
+|------|------|-------------|
+| `results` | `object` | `EvaluateReasoningResponse` from backend |
+
+**Display sections:**
+1. **Robustness Score** — Circular indicator showing score (0.0–1.0) with level label (low/medium/high) and summary text.
+2. **Stress Test Results** — List of failure scenarios (e.g., "FAILS when: x = 0 (at: division step) — Division by zero").
+3. **Weakness Summary** — List of detected weaknesses, each with a type badge and detail text.
+4. **Adversarial Questions** — Numbered list of targeted questions generated from detected failures.
+
+**Empty state:** If no results, the component is not rendered.
+
 ## API Client (`api.js`)
 
 All API calls go through `/api` prefix, which Vite proxies to `http://localhost:8000` in development.
@@ -255,6 +306,7 @@ All API calls go through `/api` prefix, which Vite proxies to `http://localhost:
 | `submitFeedback(claimId, sessionId, decision)` | POST | `/api/submit-feedback` | `{claim_id, session_id, decision}` | `FeedbackResponse` |
 | `editClaim(claimId, sessionId, newClaimText)` | POST | `/api/edit-claim` | `{claim_id, session_id, new_claim_text}` | `ProcessInputResponse` |
 | `getHistory()` | GET | `/api/history` | — | `{sessions: [...]}` |
+| `evaluateReasoning(problem, studentAnswer, confidence)` | POST | `/api/evaluate-reasoning` | `{problem, student_answer, confidence}` | `EvaluateReasoningResponse` |
 
 **Error handling pattern:** All functions check `res.ok`. On failure, they attempt to parse the error body for `detail`, falling back to a generic message. Errors are thrown as `Error` objects.
 
@@ -272,6 +324,8 @@ flowchart LR
 
     A -->|documents list| G[DocumentUpload]
     A -->|sessions list| H[HistoryDashboard]
+    A -->|EvaluateReasoningResponse| I[StressTestWorkspace]
+    I -->|results| J[StressTestResults]
 ```
 
 ### Outgoing (Frontend → Backend)
@@ -282,6 +336,7 @@ flowchart LR
     C[ValidationWorkspace] -->|input_text| D[POST /process-input]
     E[ClaimCard Accept/Reject] -->|feedback| F[POST /submit-feedback]
     G[ClaimCard Edit] -->|new_claim_text| H[POST /edit-claim]
+    I[StressTestWorkspace] -->|problem, answer, confidence| J[POST /evaluate-reasoning]
 ```
 
 ## Error Handling
@@ -298,6 +353,8 @@ flowchart LR
 | Edit/re-validate fails | ClaimCard | Red error text below the card |
 | History fetch fails | HistoryDashboard | Fails silently (empty state shown) |
 | Document list fetch fails | DocumentUpload | Fails silently (empty list shown) |
+| Empty stress test answer | StressTestWorkspace | "Please enter a student answer to stress-test." |
+| Stress test engine fails | StressTestWorkspace | Red error banner with API error message |
 
 ## Dev Server Configuration
 
