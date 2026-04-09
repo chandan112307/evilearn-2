@@ -228,7 +228,7 @@ class EvaluateReasoningResponse(BaseModel):
     adversarial_questions: list[str] = []
 
 
-# --- Thinking Simulation Engine Schemas ---
+# --- Thinking Simulation Engine Schemas (Graph-Based Cognitive Reasoning) ---
 
 class ThinkingSimulationRequest(BaseModel):
     """Request body for thinking simulation."""
@@ -237,46 +237,144 @@ class ThinkingSimulationRequest(BaseModel):
 
 
 class CognitiveProfile(BaseModel):
-    """A single cognitive reasoning profile."""
+    """A cognitive reasoning profile with strict constraint rules."""
     level: str
     description: str
     characteristics: list[str] = []
+    allowed_operations: list[str] = []
+    forbidden_operations: list[str] = []
+    max_abstraction: str = "LOW"
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, v: str) -> str:
+        allowed = {"beginner", "intermediate", "expert"}
+        if v not in allowed:
+            raise ValueError(f"Invalid level '{v}'. Must be one of: {allowed}")
+        return v
+
+    @field_validator("max_abstraction")
+    @classmethod
+    def validate_max_abstraction(cls, v: str) -> str:
+        allowed = {"LOW", "MEDIUM", "HIGH"}
+        if v not in allowed:
+            raise ValueError(f"Invalid max_abstraction '{v}'. Must be one of: {allowed}")
+        return v
 
 
-class ReasoningStep(BaseModel):
-    """A single step in a reasoning path."""
+class ReasoningNode(BaseModel):
+    """A single node in a reasoning graph."""
     step_id: str
     operation_type: str
     concept_used: str
     input_value: str = ""
     output_value: str = ""
-    reason: str = ""
+    reasoning: str = ""
+    abstraction_level: str = "LOW"
+    strategy_type: str = "direct_application"
+
+    @field_validator("abstraction_level")
+    @classmethod
+    def validate_abstraction_level(cls, v: str) -> str:
+        allowed = {"LOW", "MEDIUM", "HIGH"}
+        if v not in allowed:
+            raise ValueError(f"Invalid abstraction_level '{v}'. Must be one of: {allowed}")
+        return v
+
+    @field_validator("strategy_type")
+    @classmethod
+    def validate_strategy_type(cls, v: str) -> str:
+        allowed = {"direct_application", "rule_based", "transformation", "reduction", "optimization"}
+        if v not in allowed:
+            raise ValueError(f"Invalid strategy_type '{v}'. Must be one of: {allowed}")
+        return v
 
 
-class ReasoningPath(BaseModel):
-    """A complete reasoning path for one cognitive level."""
+class ReasoningEdge(BaseModel):
+    """An edge connecting two nodes in a reasoning graph."""
+    from_step_id: str
+    to_step_id: str
+    relation_type: str = "derives"
+
+    @field_validator("relation_type")
+    @classmethod
+    def validate_relation_type(cls, v: str) -> str:
+        allowed = {"derives", "transforms", "simplifies"}
+        if v not in allowed:
+            raise ValueError(f"Invalid relation_type '{v}'. Must be one of: {allowed}")
+        return v
+
+
+class DecisionPoint(BaseModel):
+    """A decision point in a reasoning graph."""
+    decision_point: str
+    alternatives_considered: list[str] = []
+    chosen_path_reason: str = ""
+
+
+class AbstractionMetrics(BaseModel):
+    """Abstraction scoring for a reasoning path."""
+    average_abstraction: float = Field(ge=0.0, le=3.0)
+    max_abstraction: str = "LOW"
+    abstraction_transitions: list[str] = []
+    abstraction_flow: list[str] = []
+
+    @field_validator("max_abstraction")
+    @classmethod
+    def validate_max_abstraction(cls, v: str) -> str:
+        allowed = {"LOW", "MEDIUM", "HIGH"}
+        if v not in allowed:
+            raise ValueError(f"Invalid max_abstraction '{v}'. Must be one of: {allowed}")
+        return v
+
+
+class ReasoningGraph(BaseModel):
+    """A complete reasoning graph for one cognitive level."""
     level: str
-    steps: list[ReasoningStep] = []
+    nodes: list[ReasoningNode] = []
+    edges: list[ReasoningEdge] = []
+    decisions: list[DecisionPoint] = []
+    abstraction_metrics: AbstractionMetrics = AbstractionMetrics(average_abstraction=1.0)
     metadata: dict = {}
 
 
-class StrategyTag(BaseModel):
-    """Strategy tags for a reasoning path."""
+class StrategyDistribution(BaseModel):
+    """Strategy distribution percentages for a reasoning path."""
     level: str
-    tags: list[str] = []
+    direct_application_pct: float = 0.0
+    rule_based_pct: float = 0.0
+    transformation_pct: float = 0.0
+    reduction_pct: float = 0.0
+    optimization_pct: float = 0.0
+    strategies_used: list[str] = []
 
 
-class ComparisonResult(BaseModel):
-    """Comparison analysis across reasoning paths."""
-    structural: dict = {}
-    strategy: dict = {}
-    abstraction: dict = {}
+class StructuralComparison(BaseModel):
+    """Structural comparison across reasoning graphs."""
+    graph_shape: dict = {}
+    strategy_distribution: dict = {}
+    abstraction_flow: dict = {}
+    key_differences: list[str] = []
+
+
+class StudentGraph(BaseModel):
+    """Student reasoning converted to the same graph structure."""
+    student_level_match: str = "unknown"
+    nodes: list[ReasoningNode] = []
+    edges: list[ReasoningEdge] = []
+    abstraction_metrics: AbstractionMetrics = AbstractionMetrics(average_abstraction=1.0)
+    missing_nodes: list[str] = []
+    missing_transformations: list[str] = []
+    unnecessary_steps: list[str] = []
+    abstraction_mismatches: list[str] = []
+    strategy_distribution: dict = {}
 
 
 class GapItem(BaseModel):
-    """A single thinking gap insight."""
+    """A single thinking gap insight derived from structural analysis."""
     insight: str
     severity: str = "info"
+    source: str = "structural"
 
     @field_validator("severity")
     @classmethod
@@ -286,12 +384,22 @@ class GapItem(BaseModel):
             raise ValueError(f"Invalid severity '{v}'. Must be one of: {allowed}")
         return v
 
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, v: str) -> str:
+        allowed = {"structural", "strategy", "abstraction", "comparison"}
+        if v not in allowed:
+            raise ValueError(f"Invalid source '{v}'. Must be one of: {allowed}")
+        return v
+
 
 class ThinkingSimulationResponse(BaseModel):
-    """Response for thinking simulation."""
+    """Response for thinking simulation — graph-based cognitive reasoning."""
     cognitive_profiles: list[CognitiveProfile] = []
-    reasoning_paths: list[ReasoningPath] = []
-    strategy_tags: list[StrategyTag] = []
-    comparison_results: ComparisonResult = ComparisonResult()
+    reasoning_graphs: list[ReasoningGraph] = []
+    strategy_distributions: list[StrategyDistribution] = []
+    structural_comparison: StructuralComparison = StructuralComparison()
     gap_analysis: list[GapItem] = []
-    student_comparison: dict = {}
+    student_graph: StudentGraph = StudentGraph()
+    validation_passed: bool = True
+    validation_notes: list[str] = []

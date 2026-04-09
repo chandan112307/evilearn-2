@@ -82,35 +82,41 @@ The engine uses a central `ThinkingState` (TypedDict) containing:
     { "level": "intermediate", ... },
     { "level": "expert", ... }
   ],
-  "reasoning_paths": [
+  "reasoning_graphs": [
     {
       "level": "beginner",
-      "steps": [
+      "nodes": [
         {
           "step_id": "b1",
           "operation_type": "identify",
           "concept_used": "problem recognition",
           "input_value": "f(x) = x³ + 2x² - 5x + 3",
           "output_value": "Identified as polynomial differentiation",
-          "reason": "Read the problem statement directly"
+          "reasoning": "Read the problem statement directly",
+          "abstraction_level": "LOW",
+          "strategy_type": "direct_application"
         }
-      ]
+      ],
+      "edges": [],
+      "decisions": [],
+      "abstraction_metrics": { "average_abstraction": 1.0, "max_abstraction": "LOW" }
     }
   ],
-  "strategy_tags": [
-    { "level": "beginner", "tags": ["direct_application"] },
-    { "level": "intermediate", "tags": ["rule_based_reasoning"] },
-    { "level": "expert", "tags": ["optimization", "transformation"] }
+  "strategy_distributions": [
+    { "level": "beginner", "strategies_used": ["direct_application"] },
+    { "level": "intermediate", "strategies_used": ["rule_based_reasoning"] },
+    { "level": "expert", "strategies_used": ["optimization", "transformation"] }
   ],
-  "comparison_results": {
-    "structural": { ... },
-    "strategy": { ... },
-    "abstraction": { ... }
+  "structural_comparison": {
+    "graph_shape": { ... },
+    "strategy_distribution": { ... },
+    "abstraction_flow": { ... },
+    "key_differences": []
   },
-  "student_comparison": {
+  "student_graph": {
     "student_level_match": "beginner",
-    "missing_steps": ["Verification of result"],
-    "missing_strategies": ["transformation", "optimization"]
+    "missing_nodes": ["Verification of result"],
+    "missing_transformations": ["transformation", "optimization"]
   },
   "gap_analysis": [
     {
@@ -459,37 +465,46 @@ The `/simulate-thinking` endpoint returns this structure:
       "characteristics": ["Direct formula usage", "No transformations"]
     }
   ],
-  "reasoning_paths": [
+  "reasoning_graphs": [
     {
       "level": "beginner",
-      "steps": [
+      "nodes": [
         {
           "step_id": "b1",
           "operation_type": "identify",
           "concept_used": "problem recognition",
           "input_value": "Problem text",
           "output_value": "Identified problem type",
-          "reason": "Read the problem statement directly"
+          "reasoning": "Read the problem statement directly",
+          "abstraction_level": "LOW",
+          "strategy_type": "direct_application"
         }
       ],
+      "edges": [],
+      "decisions": [],
+      "abstraction_metrics": { "average_abstraction": 1.0, "max_abstraction": "LOW" },
       "metadata": {}
     }
   ],
-  "strategy_tags": [
-    { "level": "beginner", "tags": ["direct_application"] }
+  "strategy_distributions": [
+    { "level": "beginner", "strategies_used": ["direct_application"] }
   ],
-  "comparison_results": {
-    "structural": {},
-    "strategy": {},
-    "abstraction": {}
+  "structural_comparison": {
+    "graph_shape": {},
+    "strategy_distribution": {},
+    "abstraction_flow": {},
+    "key_differences": []
   },
   "gap_analysis": [
     {
       "insight": "Your approach follows beginner-level reasoning: direct application",
-      "severity": "warning"
+      "severity": "warning",
+      "source": "structural"
     }
   ],
-  "student_comparison": {}
+  "student_graph": {},
+  "validation_passed": true,
+  "validation_notes": []
 }
 ```
 

@@ -3,11 +3,11 @@ function ThinkingSimulationResults({ results }) {
 
   const {
     cognitive_profiles = [],
-    reasoning_paths = [],
-    strategy_tags = [],
-    comparison_results = {},
+    reasoning_graphs = [],
+    strategy_distributions = [],
+    structural_comparison = {},
     gap_analysis = [],
-    student_comparison = {},
+    student_graph = {},
   } = results;
 
   const levelColors = {
@@ -46,8 +46,8 @@ function ThinkingSimulationResults({ results }) {
     critical: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', icon: '🔴' },
   };
 
-  const hasStudentComparison = student_comparison && Object.keys(student_comparison).length > 0
-    && student_comparison.student_level_match && student_comparison.student_level_match !== 'unknown';
+  const hasStudentComparison = student_graph && Object.keys(student_graph).length > 0
+    && student_graph.student_level_match && student_graph.student_level_match !== 'unknown';
 
   return (
     <div className="space-y-6">
@@ -88,52 +88,53 @@ function ThinkingSimulationResults({ results }) {
         </div>
       )}
 
-      {/* Reasoning Paths */}
-      {reasoning_paths.length > 0 && (
+      {/* Reasoning Graphs */}
+      {reasoning_graphs.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <span>🔀</span>
-            Reasoning Paths
+            Reasoning Graphs
           </h3>
           <div className="space-y-6">
-            {reasoning_paths.map((path, i) => {
-              const colors = levelColors[path.level] || levelColors.beginner;
-              const icon = levelIcons[path.level] || '📝';
+            {reasoning_graphs.map((graph, i) => {
+              const colors = levelColors[graph.level] || levelColors.beginner;
+              const icon = levelIcons[graph.level] || '📝';
+              const nodes = graph.nodes || [];
               return (
                 <div key={i} className={`rounded-lg border p-4 ${colors.bg} ${colors.border}`}>
                   <div className="flex items-center gap-2 mb-4">
                     <span className="text-lg">{icon}</span>
                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${colors.badge}`}>
-                      {path.level.charAt(0).toUpperCase() + path.level.slice(1)} Path
+                      {graph.level.charAt(0).toUpperCase() + graph.level.slice(1)} Graph
                     </span>
                     <span className="text-xs text-gray-500">
-                      {path.steps.length} step{path.steps.length !== 1 ? 's' : ''}
+                      {nodes.length} node{nodes.length !== 1 ? 's' : ''}
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {path.steps.map((step, j) => (
+                    {nodes.map((node, j) => (
                       <div key={j} className="bg-white rounded-lg p-3 border border-gray-100 shadow-sm">
                         <div className="flex items-center gap-2 mb-2">
                           <div className={`w-6 h-6 rounded-full ${colors.accent} text-white text-xs flex items-center justify-center font-bold`}>
                             {j + 1}
                           </div>
                           <span className="text-sm font-medium text-gray-900">
-                            {step.operation_type.replace(/_/g, ' ')}
+                            {node.operation_type.replace(/_/g, ' ')}
                           </span>
-                          {step.concept_used && (
+                          {node.concept_used && (
                             <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                              {step.concept_used}
+                              {node.concept_used}
                             </span>
                           )}
                         </div>
-                        {(step.input_value || step.output_value) && (
+                        {(node.input_value || node.output_value) && (
                           <div className="text-xs text-gray-600 ml-8 mb-1">
-                            {step.input_value && <span className="block"><span className="font-medium">Input:</span> {step.input_value}</span>}
-                            {step.output_value && <span className="block"><span className="font-medium">Output:</span> {step.output_value}</span>}
+                            {node.input_value && <span className="block"><span className="font-medium">Input:</span> {node.input_value}</span>}
+                            {node.output_value && <span className="block"><span className="font-medium">Output:</span> {node.output_value}</span>}
                           </div>
                         )}
-                        {step.reason && (
-                          <p className="text-xs text-gray-500 ml-8 italic">{step.reason}</p>
+                        {node.reasoning && (
+                          <p className="text-xs text-gray-500 ml-8 italic">{node.reasoning}</p>
                         )}
                       </div>
                     ))}
@@ -145,23 +146,23 @@ function ThinkingSimulationResults({ results }) {
         </div>
       )}
 
-      {/* Strategy Tags */}
-      {strategy_tags.length > 0 && (
+      {/* Strategy Distributions */}
+      {strategy_distributions.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <span>🏷️</span>
-            Strategy Tags
+            Strategy Distributions
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {strategy_tags.map((tagEntry, i) => {
-              const colors = levelColors[tagEntry.level] || levelColors.beginner;
+            {strategy_distributions.map((dist, i) => {
+              const colors = levelColors[dist.level] || levelColors.beginner;
               return (
                 <div key={i} className={`rounded-lg border p-4 ${colors.bg} ${colors.border}`}>
                   <span className={`text-sm font-semibold ${colors.text}`}>
-                    {tagEntry.level.charAt(0).toUpperCase() + tagEntry.level.slice(1)}
+                    {dist.level.charAt(0).toUpperCase() + dist.level.slice(1)}
                   </span>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {tagEntry.tags.map((tag, j) => (
+                    {(dist.strategies_used || []).map((tag, j) => (
                       <span key={j} className={`px-2 py-1 text-xs rounded-full ${colors.badge}`}>
                         {tag.replace(/_/g, ' ')}
                       </span>
@@ -175,7 +176,7 @@ function ThinkingSimulationResults({ results }) {
       )}
 
       {/* Comparative Analysis */}
-      {comparison_results && Object.keys(comparison_results).length > 0 && (
+      {structural_comparison && Object.keys(structural_comparison).length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <span>📊</span>
@@ -183,11 +184,11 @@ function ThinkingSimulationResults({ results }) {
           </h3>
 
           {/* Structural Comparison */}
-          {comparison_results.structural && Object.keys(comparison_results.structural).length > 0 && (
+          {structural_comparison.graph_shape && Object.keys(structural_comparison.graph_shape).length > 0 && (
             <div className="mb-6">
               <h4 className="text-sm font-semibold text-gray-700 mb-3">Structural Comparison</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {Object.entries(comparison_results.structural).map(([level, data]) => {
+                {Object.entries(structural_comparison.graph_shape).map(([level, data]) => {
                   const colors = levelColors[level] || levelColors.beginner;
                   return (
                     <div key={level} className={`rounded-lg border p-3 ${colors.bg} ${colors.border}`}>
@@ -215,11 +216,11 @@ function ThinkingSimulationResults({ results }) {
           )}
 
           {/* Key Differences */}
-          {comparison_results.key_differences && comparison_results.key_differences.length > 0 && (
+          {structural_comparison.key_differences && structural_comparison.key_differences.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-gray-700 mb-3">Key Differences</h4>
               <div className="space-y-2">
-                {comparison_results.key_differences.map((diff, i) => (
+                {structural_comparison.key_differences.map((diff, i) => (
                   <div key={i} className="p-3 bg-gray-50 rounded-lg text-sm text-gray-700 flex items-start gap-2">
                     <span className="font-bold text-indigo-500 mt-0.5">→</span>
                     <span>{diff}</span>
@@ -231,29 +232,29 @@ function ThinkingSimulationResults({ results }) {
         </div>
       )}
 
-      {/* Student Comparison */}
+      {/* Student Graph */}
       {hasStudentComparison && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <span>👤</span>
-            Student Comparison
+            Student Graph
           </h3>
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-600">Your reasoning matches:</span>
               <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
-                (levelColors[student_comparison.student_level_match] || levelColors.beginner).badge
+                (levelColors[student_graph.student_level_match] || levelColors.beginner).badge
               }`}>
-                {student_comparison.student_level_match.charAt(0).toUpperCase() +
-                 student_comparison.student_level_match.slice(1)} Level
+                {student_graph.student_level_match.charAt(0).toUpperCase() +
+                 student_graph.student_level_match.slice(1)} Level
               </span>
             </div>
 
-            {student_comparison.missing_steps && student_comparison.missing_steps.length > 0 && (
+            {student_graph.missing_nodes && student_graph.missing_nodes.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Missing Steps</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Missing Nodes</h4>
                 <div className="space-y-1">
-                  {student_comparison.missing_steps.map((step, i) => (
+                  {student_graph.missing_nodes.map((step, i) => (
                     <div key={i} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
                       ⚠️ {step}
                     </div>
@@ -262,11 +263,11 @@ function ThinkingSimulationResults({ results }) {
               </div>
             )}
 
-            {student_comparison.missing_strategies && student_comparison.missing_strategies.length > 0 && (
+            {student_graph.missing_transformations && student_graph.missing_transformations.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Missing Strategies</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Missing Transformations</h4>
                 <div className="flex flex-wrap gap-2">
-                  {student_comparison.missing_strategies.map((strategy, i) => (
+                  {student_graph.missing_transformations.map((strategy, i) => (
                     <span key={i} className="px-2 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-full">
                       {strategy.replace(/_/g, ' ')}
                     </span>
@@ -275,11 +276,11 @@ function ThinkingSimulationResults({ results }) {
               </div>
             )}
 
-            {student_comparison.inefficiencies && student_comparison.inefficiencies.length > 0 && (
+            {student_graph.unnecessary_steps && student_graph.unnecessary_steps.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Inefficiencies</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Unnecessary Steps</h4>
                 <div className="space-y-1">
-                  {student_comparison.inefficiencies.map((ineff, i) => (
+                  {student_graph.unnecessary_steps.map((ineff, i) => (
                     <div key={i} className="p-2 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
                       {ineff}
                     </div>
@@ -288,11 +289,11 @@ function ThinkingSimulationResults({ results }) {
               </div>
             )}
 
-            {student_comparison.abstraction_gaps && student_comparison.abstraction_gaps.length > 0 && (
+            {student_graph.abstraction_mismatches && student_graph.abstraction_mismatches.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Abstraction Gaps</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Abstraction Mismatches</h4>
                 <div className="space-y-1">
-                  {student_comparison.abstraction_gaps.map((gap, i) => (
+                  {student_graph.abstraction_mismatches.map((gap, i) => (
                     <div key={i} className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-800">
                       🔴 {gap}
                     </div>
