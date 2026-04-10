@@ -128,6 +128,12 @@ def explanation_analyzer_node(state: CognitiveLoadState) -> dict:
         )
         steps.append(step.model_dump())
 
+    print("\n[Node] explanation_analyzer")
+    print(f"  Raw length: {len(raw.split())} words")
+    print(f"  Steps created: {len(steps)}")
+    for s in steps:
+        print(f"    {s['step_id']} | words={len(s['content'].split())} | abstraction={s['abstraction_level']}")
+
     return {"steps": steps}
 
 
@@ -143,6 +149,11 @@ def user_state_tracker_node(state: CognitiveLoadState) -> dict:
     """
     user_id = state.get("user_id", "default")
     user_state = _get_user_state(user_id)
+
+    print("\n[Node] user_state_tracker")
+    print(f"  User ID: {user_id}")
+    print(f"  User state: {user_state}")
+    
     return {"user_state": user_state}
 
 
@@ -203,6 +214,14 @@ def load_estimator_node(state: CognitiveLoadState) -> dict:
         memory_demand=round(memory_demand, 2),
         total_load=round(total_load, 2),
     )
+    print("\n[Node] load_estimator")
+    print(f"  iteration={iteration}")
+    print(f"  using={'adapted_steps' if iteration > 0 else 'original_steps'}")
+    print(f"  step_density={step_density:.2f}")
+    print(f"  concept_gap={concept_gap:.2f}")
+    print(f"  memory_demand={memory_demand:.2f}")
+    print(f"  total_load={total_load:.2f}")
+
     return {"load_metrics": metrics.model_dump()}
 
 
@@ -295,6 +314,15 @@ def control_engine_node(state: CognitiveLoadState) -> dict:
                 action="maintain",
                 reason="Load matches capacity -- maintaining current structure",
             ).model_dump())
+
+    print("\n[Node] control_engine")
+    print(f"  total_load={total_load:.2f}")
+    print(f"  user_capacity={user_capacity:.2f}")
+    print(f"  decision: load_state={load_state}")
+    print(f"  reasoning_mode={reasoning_mode}")
+    print("  actions:")
+    for a in control_actions:
+        print(f"    - {a['action']} | {a['reason']}")
 
     return {
         "load_state": load_state,
@@ -453,6 +481,15 @@ def granularity_controller_node(state: CognitiveLoadState) -> dict:
     for s in adapted:
         s["depends_on"] = [d for d in s.get("depends_on", []) if d in valid_ids]
 
+    print("\n[Node] granularity_controller")
+    print(f"  load_state={load_state}")
+    print(f"  actions={action_types}")
+    print(f"  input_steps={len(steps)}")
+    print(f"  output_steps={len(adapted)}")
+
+    for s in adapted:
+        print(f"    {s['step_id']} | words={len(s['content'].split())} | abstraction={s['abstraction_level']}")
+
     return {"adapted_steps": adapted}
 
 
@@ -509,6 +546,19 @@ def feedback_manager_node(state: CognitiveLoadState) -> dict:
     new_iteration = iteration + 1
     converged = (load_state == "optimal") or (new_iteration >= max_iterations)
 
+    print("\n[Node] feedback_manager")
+    print(f"  iteration={iteration} -> {iteration+1}")
+    print(f"  load_state={load_state}")
+
+    print("  updated_user_state:")
+    print(f"    understanding={understanding:.3f}")
+    print(f"    stability={stability:.3f}")
+    print(f"    learning_speed={learning_speed:.3f}")
+    print(f"    overload_signals={overload_signals}")
+
+    print(f"  converged={converged}")
+    print(f"  max_iterations={max_iterations}")
+
     return {
         "user_state": updated_dict,
         "iteration": new_iteration,
@@ -521,11 +571,9 @@ def feedback_manager_node(state: CognitiveLoadState) -> dict:
 # ---------------------------------------------------------------------------
 
 def _should_loop(state: CognitiveLoadState) -> str:
-    """Decide whether to re-optimize or finalize."""
-    if state.get("converged", True):
-        return "end"
-    return "loop"
-
+    decision = "end" if state.get("converged", True) else "loop"
+    print(f"\n[Loop Decision] -> {decision}")
+    return decision
 
 # ---------------------------------------------------------------------------
 # Graph Construction
@@ -609,7 +657,17 @@ class CognitiveLoadOptimizer:
             "converged": False,
         }
 
+        print("\n=== Cognitive Load Optimization START ===")
+        print(f"[INPUT] user_id={user_id}")
+        print(f"[INPUT] explanation_length={len(explanation.split())} words")
+
         final_state = self.graph.invoke(initial_state)
+
+        print("=== FINAL OUTPUT ===")
+        print(f"[FINAL] load_state={final_state.get('load_state')}")
+        print(f"[FINAL] reasoning_mode={final_state.get('reasoning_mode')}")
+        print(f"[FINAL] iterations={final_state.get('iteration')}")
+        print("========================================\n")
 
         return {
             "adapted_explanation": final_state.get("adapted_steps", []),

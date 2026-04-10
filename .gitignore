@@ -1,2 +1,14 @@
 __pycache__/
 *.pyc
+
+.agent/
+.agents/
+.claude/
+.stitch/
+.superpowers/
+design-system/
+docs/
+skills-lock.json
+
+.env
+evilearn_env/

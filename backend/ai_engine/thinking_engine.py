@@ -85,10 +85,15 @@ def _llm_call(llm_client, prompt: str, max_tokens: int = 2048) -> str:
             model=os.environ.get("LLM_MODEL", "llama3-8b-8192"),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
         )
-        return response.choices[0].message.content.strip()
-    except Exception:
+        print("RAW LLM RESPONSE: ", response)
+        # return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        print("\n===== RAW LLM TEXT =====\n", content, "\n========================\n")
+        return content.strip()
+    except Exception as e:
+        print("❌ LLM Error", str(e))
         return ""
 
 
@@ -267,13 +272,20 @@ def parallel_reasoning_generator_node(state: ThinkingState) -> dict:
                 f"Generate {'3-4' if level == 'beginner' else '4-5' if level == 'intermediate' else '3-5'} nodes.\n"
                 "JSON object:"
             )
-            result = _parse_json(_llm_call(llm_client, prompt, 2048), None)
+            # result = _parse_json(_llm_call(llm_client, prompt, 2048), None)
+            raw = _llm_call(llm_client, prompt, 2048)
+            print("RAW BEFORE PARSE:", raw)
+
+            result = _parse_json(raw, None)
+            print("PARSED RESULT:", result)
+
             if isinstance(result, dict) and "nodes" in result:
                 graph = _build_graph_from_llm(result, level, max_abs, allowed_ops, forbidden_ops)
                 reasoning_graphs.append(graph)
                 continue
 
         # Fallback: deterministic rule-based graph
+        print("⚠️ FALLBACK TRIGGERED for level:", level)
         reasoning_graphs.append(_build_fallback_graph(level, problem, max_abs))
 
     return {"reasoning_graphs": reasoning_graphs}

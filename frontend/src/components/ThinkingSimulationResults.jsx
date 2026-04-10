@@ -1,3 +1,5 @@
+import React from 'react';
+
 function ThinkingSimulationResults({ results }) {
   if (!results) return null;
 
@@ -14,25 +16,22 @@ function ThinkingSimulationResults({ results }) {
 
   const levelColors = {
     beginner: {
-      bg: 'bg-blue-50',
-      border: 'border-blue-200',
-      text: 'text-blue-800',
-      badge: 'bg-blue-100 text-blue-800',
-      accent: 'bg-blue-500',
+      card: 'bg-white border border-gray-200',
+      text: 'text-gray-900',
+      badge: 'clean-tag',
+      accent: 'bg-gray-400',
     },
     intermediate: {
-      bg: 'bg-amber-50',
-      border: 'border-amber-200',
-      text: 'text-amber-800',
-      badge: 'bg-amber-100 text-amber-800',
-      accent: 'bg-amber-500',
+      card: 'bg-white border border-blue-200 shadow-sm',
+      text: 'text-gray-900',
+      badge: 'clean-tag bg-blue-50 text-blue-800 border-blue-100',
+      accent: 'bg-blue-400',
     },
     expert: {
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      text: 'text-emerald-800',
-      badge: 'bg-emerald-100 text-emerald-800',
-      accent: 'bg-emerald-500',
+      card: 'bg-white border border-blue-400 shadow-md',
+      text: 'text-gray-900',
+      badge: 'clean-tag bg-blue-100 text-blue-900 border-blue-200',
+      accent: 'bg-blue-600',
     },
   };
 
@@ -43,75 +42,71 @@ function ThinkingSimulationResults({ results }) {
   };
 
   const abstractionColors = {
-    LOW: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300' },
-    MEDIUM: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-300' },
-    HIGH: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-300' },
+    LOW: { badge: 'bg-gray-50 text-gray-600 border-gray-200' },
+    MEDIUM: { badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+    HIGH: { badge: 'bg-blue-100 text-blue-900 border-blue-300' },
   };
 
   const strategyColors = {
-    direct_application: 'bg-blue-100 text-blue-700',
-    rule_based: 'bg-amber-100 text-amber-700',
-    transformation: 'bg-purple-100 text-purple-700',
-    reduction: 'bg-rose-100 text-rose-700',
-    optimization: 'bg-emerald-100 text-emerald-700',
-  };
-
-  const relationIcons = {
-    derives: '→',
-    transforms: '⟹',
-    simplifies: '↓',
+    direct_application: 'bg-white text-gray-700 border border-gray-200',
+    rule_based: 'bg-gray-50 text-gray-800 border border-gray-200',
+    transformation: 'bg-blue-50 text-blue-800 border border-blue-100',
+    reduction: 'bg-blue-100 text-blue-900 border border-blue-200',
+    optimization: 'bg-blue-200 text-blue-900 border border-blue-300',
   };
 
   const severityConfig = {
-    info: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', icon: 'ℹ️' },
-    warning: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', icon: '⚠️' },
-    critical: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', icon: '🔴' },
+    info: { card: 'bg-gray-50 border border-gray-200', text: 'text-gray-800', icon: 'ℹ️' },
+    warning: { card: 'bg-orange-50 border border-orange-200', text: 'text-orange-800', icon: '⚠️' },
+    critical: { card: 'bg-red-50 border border-red-200', text: 'text-red-800', icon: '🔴' },
   };
 
-  const hasStudentGraph = student_graph && student_graph.student_level_match
-    && student_graph.student_level_match !== 'unknown';
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 w-full max-w-5xl mx-auto">
       {/* Validation Notes */}
       {!validation_passed && validation_notes.length > 0 && (
-        <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4">
-          <h4 className="text-sm font-semibold text-yellow-800 mb-2">⚠️ Validation Notes</h4>
-          {validation_notes.map((note, i) => (
-            <p key={i} className="text-xs text-yellow-700">{note}</p>
-          ))}
+        <div className="clean-card bg-orange-50 border-orange-200 p-6 sm:p-8">
+          <h4 className="text-lg font-display font-bold text-orange-900 mb-3 flex items-center gap-2">
+            <span>⚠️</span> Validation Notes
+          </h4>
+          <div className="space-y-2">
+            {validation_notes.map((note, i) => (
+              <p key={i} className="text-sm font-body font-medium text-orange-800 bg-white p-3 rounded-xl border border-orange-100">{note}</p>
+            ))}
+          </div>
         </div>
       )}
 
       {/* Cognitive Profiles with Constraint Rules */}
       {cognitive_profiles.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span>🧠</span>
-            Cognitive Profiles (Constraint Rules)
+        <div className="clean-card p-6 sm:p-8">
+          <h3 className="text-xl font-display font-bold text-gray-900 mb-6 flex items-center gap-3">
+            <span className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl border border-blue-100">🧠</span>
+            Cognitive Profiles
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {cognitive_profiles.map((profile, i) => {
               const colors = levelColors[profile.level] || levelColors.beginner;
               const icon = levelIcons[profile.level] || '📝';
               return (
-                <div key={i} className={`rounded-lg border p-4 ${colors.bg} ${colors.border}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">{icon}</span>
-                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${colors.badge}`}>
+                <div key={i} className={`p-6 rounded-2xl ${colors.card}`}>
+                  <div className="flex items-center gap-2 mb-4 flex-wrap">
+                    <span className="text-2xl mr-1">{icon}</span>
+                    <span className={colors.badge}>
                       {profile.level.charAt(0).toUpperCase() + profile.level.slice(1)}
                     </span>
-                    <span className={`px-2 py-0.5 text-xs rounded-full ${(abstractionColors[profile.max_abstraction] || abstractionColors.LOW).bg} ${(abstractionColors[profile.max_abstraction] || abstractionColors.LOW).text}`}>
+                    <span className={`clean-tag ${abstractionColors[profile.max_abstraction]?.badge || abstractionColors.LOW.badge}`}>
                       Max: {profile.max_abstraction}
                     </span>
                   </div>
-                  <p className={`text-sm mb-3 ${colors.text}`}>{profile.description}</p>
+                  <p className={`text-sm font-body font-medium mb-4 ${colors.text}`}>{profile.description}</p>
+                  
                   {profile.allowed_operations && profile.allowed_operations.length > 0 && (
-                    <div className="mb-2">
-                      <span className="text-xs font-medium text-gray-600">Allowed:</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
+                    <div className="mb-3">
+                      <span className="text-xs font-display font-bold uppercase tracking-wider text-gray-500 mb-1 block">Allowed</span>
+                      <div className="flex flex-wrap gap-2">
                         {profile.allowed_operations.map((op, j) => (
-                          <span key={j} className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                          <span key={j} className="text-xs font-semibold px-2 py-1 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg">
                             {op.replace(/_/g, ' ')}
                           </span>
                         ))}
@@ -120,10 +115,10 @@ function ThinkingSimulationResults({ results }) {
                   )}
                   {profile.forbidden_operations && profile.forbidden_operations.length > 0 && (
                     <div>
-                      <span className="text-xs font-medium text-gray-600">Forbidden:</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
+                      <span className="text-xs font-display font-bold uppercase tracking-wider text-gray-500 mb-1 block">Forbidden</span>
+                      <div className="flex flex-wrap gap-2">
                         {profile.forbidden_operations.map((op, j) => (
-                          <span key={j} className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
+                          <span key={j} className="text-xs font-semibold px-2 py-1 bg-red-50 border border-red-200 text-red-800 rounded-lg">
                             {op.replace(/_/g, ' ')}
                           </span>
                         ))}
@@ -137,14 +132,14 @@ function ThinkingSimulationResults({ results }) {
         </div>
       )}
 
-      {/* Reasoning Graphs with Nodes, Edges, Abstraction */}
+      {/* Reasoning Graphs */}
       {reasoning_graphs.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span>🔀</span>
+        <div className="clean-card p-6 sm:p-8 bg-gray-50">
+          <h3 className="text-xl font-display font-bold text-gray-900 mb-6 flex items-center gap-3">
+            <span className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl border border-blue-100">🔀</span>
             Reasoning Graphs
           </h3>
-          <div className="space-y-6">
+          <div className="space-y-8">
             {reasoning_graphs.map((graph, i) => {
               const colors = levelColors[graph.level] || levelColors.beginner;
               const icon = levelIcons[graph.level] || '📝';
@@ -152,90 +147,93 @@ function ThinkingSimulationResults({ results }) {
               const edges = graph.edges || [];
               const decisions = graph.decisions || [];
               const absMetrics = graph.abstraction_metrics || {};
+              
               return (
-                <div key={i} className={`rounded-lg border p-4 ${colors.bg} ${colors.border}`}>
-                  <div className="flex items-center gap-2 mb-4 flex-wrap">
-                    <span className="text-lg">{icon}</span>
-                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${colors.badge}`}>
-                      {graph.level.charAt(0).toUpperCase() + graph.level.slice(1)} Graph
+                <div key={i} className={`p-6 sm:p-8 rounded-2xl ${colors.card} transition-colors hover:border-blue-300`}>
+                  <div className="flex items-center gap-3 mb-6 flex-wrap bg-white p-4 rounded-xl border border-gray-100">
+                    <span className="text-3xl">{icon}</span>
+                    <span className={colors.badge}>
+                      {graph.level.charAt(0).toUpperCase() + graph.level.slice(1)} Flow
                     </span>
-                    <span className="text-xs text-gray-500">
-                      {nodes.length} node{nodes.length !== 1 ? 's' : ''} · {edges.length} edge{edges.length !== 1 ? 's' : ''}
+                    <span className="clean-tag bg-gray-50 border-gray-200 text-gray-600">
+                      {nodes.length} nodes · {edges.length} edges
                     </span>
                     {absMetrics.max_abstraction && (
-                      <span className={`px-2 py-0.5 text-xs rounded-full ${(abstractionColors[absMetrics.max_abstraction] || abstractionColors.LOW).bg} ${(abstractionColors[absMetrics.max_abstraction] || abstractionColors.LOW).text}`}>
-                        Max Abstraction: {absMetrics.max_abstraction}
+                      <span className={`clean-tag ${abstractionColors[absMetrics.max_abstraction]?.badge || abstractionColors.LOW.badge}`}>
+                        Max Abs: {absMetrics.max_abstraction}
                       </span>
                     )}
                   </div>
 
-                  {/* Nodes */}
-                  <div className="space-y-2">
+                  {/* Nodes Flow */}
+                  <div className="space-y-3 relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-px before:bg-gray-200">
                     {nodes.map((node, j) => {
                       const absColor = abstractionColors[node.abstraction_level] || abstractionColors.LOW;
-                      const stratColor = strategyColors[node.strategy_type] || 'bg-gray-100 text-gray-700';
-                      // Find outgoing edge for this node
-                      const outEdge = edges.find(e => e.from_step_id === node.step_id);
+                      const stratColor = strategyColors[node.strategy_type] || 'bg-gray-50 text-gray-700 border border-gray-200';
+                      const isDecision = decisions.some(d => d.from_step_id === node.step_id);
+                      
                       return (
-                        <div key={j}>
-                          <div className={`bg-white rounded-lg p-3 border shadow-sm ${absColor.border}`}>
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <div className={`w-6 h-6 rounded-full ${colors.accent} text-white text-xs flex items-center justify-center font-bold shrink-0`}>
-                                {j + 1}
-                              </div>
-                              <span className="text-sm font-medium text-gray-900">
-                                {node.operation_type.replace(/_/g, ' ')}
-                              </span>
-                              {node.concept_used && (
-                                <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                                  {node.concept_used}
-                                </span>
-                              )}
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${absColor.bg} ${absColor.text}`}>
-                                {node.abstraction_level}
-                              </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${stratColor}`}>
-                                {node.strategy_type.replace(/_/g, ' ')}
-                              </span>
-                            </div>
-                            {(node.input_value || node.output_value) && (
-                              <div className="text-xs text-gray-600 ml-8 mb-1">
-                                {node.input_value && <span className="block"><span className="font-medium">Input:</span> {node.input_value}</span>}
-                                {node.output_value && <span className="block"><span className="font-medium">Output:</span> {node.output_value}</span>}
-                              </div>
-                            )}
-                            {node.reasoning && (
-                              <p className="text-xs text-gray-500 ml-8 italic">{node.reasoning}</p>
-                            )}
+                        <div key={j} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white border-2 border-gray-200 shadow-sm absolute left-0 md:left-1/2 -ml-6 md:-ml-6 shrink-0 text-lg font-bold text-gray-500 transition-colors group-hover:border-blue-400 group-hover:text-blue-500">
+                            {j + 1}
                           </div>
-                          {/* Edge connector */}
-                          {outEdge && (
-                            <div className="flex items-center justify-center py-1">
-                              <span className="text-xs text-gray-400 font-mono">
-                                {relationIcons[outEdge.relation_type] || '→'} {outEdge.relation_type}
-                              </span>
+                          
+                          <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] ml-16 md:ml-0">
+                            <div className={`p-5 rounded-2xl bg-white border ${isDecision ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'} shadow-sm transition-shadow hover:shadow-md`}>
+                              <div className="flex flex-col gap-2">
+                                <h4 className="text-lg font-display font-bold text-gray-900">
+                                  {node.operation_type.replace(/_/g, ' ')}
+                                </h4>
+                                
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                  <span className={`clean-tag ${absColor.badge}`}>
+                                    {node.abstraction_level}
+                                  </span>
+                                  <span className={`clean-tag ${stratColor}`}>
+                                    {node.strategy_type.replace(/_/g, ' ')}
+                                  </span>
+                                  {node.concept_used && (
+                                    <span className="clean-tag bg-gray-50 text-gray-600 border-gray-200">
+                                      {node.concept_used}
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                {(node.input_value || node.output_value) && (
+                                  <div className="bg-gray-50 rounded-xl p-3 text-sm border border-gray-100 space-y-1 my-1">
+                                    {node.input_value && <div className="text-gray-600"><span className="font-display font-bold text-gray-400 uppercase tracking-wider text-xs mr-2">IN</span><span className="font-medium text-gray-800">{node.input_value}</span></div>}
+                                    {node.output_value && <div className="text-gray-600"><span className="font-display font-bold text-gray-400 uppercase tracking-wider text-xs mr-2">OUT</span><span className="font-medium text-gray-800">{node.output_value}</span></div>}
+                                  </div>
+                                )}
+                                
+                                {node.reasoning && (
+                                  <p className="text-sm font-body text-gray-600 italic leading-relaxed">{node.reasoning}</p>
+                                )}
+                              </div>
                             </div>
-                          )}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Decisions */}
+                  {/* Decisions Layer */}
                   {decisions.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-gray-200">
-                      <h5 className="text-xs font-semibold text-gray-600 mb-2">Decision Points</h5>
-                      <div className="space-y-2">
+                    <div className="mt-8 pt-6 border-t border-gray-200">
+                      <h5 className="text-sm font-display font-bold uppercase tracking-wider text-gray-500 mb-4 ml-2">Decision Points</h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {decisions.map((d, j) => (
-                          <div key={j} className="text-xs bg-white/60 rounded p-2 border border-gray-100">
-                            <span className="font-medium text-gray-700">🔹 {d.decision_point}</span>
+                          <div key={j} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm transition-shadow hover:shadow-md">
+                            <span className="font-display font-bold text-gray-800 block mb-2">{d.decision_point}</span>
                             {d.alternatives_considered && d.alternatives_considered.length > 0 && (
-                              <span className="text-gray-500 ml-2">
-                                (considered: {d.alternatives_considered.join(', ')})
-                              </span>
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {d.alternatives_considered.map((alt, aidx) => (
+                                  <span key={aidx} className="text-xs font-semibold bg-gray-50 text-gray-500 px-2 py-1 rounded-lg border border-gray-100">vs {alt}</span>
+                                ))}
+                              </div>
                             )}
                             {d.chosen_path_reason && (
-                              <p className="text-gray-500 mt-0.5 italic">↳ {d.chosen_path_reason}</p>
+                              <p className="text-sm font-body text-blue-700 font-medium bg-blue-50 border border-blue-100 p-2 rounded-lg">↳ {d.chosen_path_reason}</p>
                             )}
                           </div>
                         ))}
@@ -249,48 +247,45 @@ function ThinkingSimulationResults({ results }) {
         </div>
       )}
 
-      {/* Strategy Distributions with Percentages */}
+      {/* Strategy Distributions */}
       {strategy_distributions.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span>📊</span>
+        <div className="clean-card p-6 sm:p-8">
+          <h3 className="text-xl font-display font-bold text-gray-900 mb-6 flex items-center gap-3">
+            <span className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl border border-blue-100">📊</span>
             Strategy Distributions
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {strategy_distributions.map((dist, i) => {
               const colors = levelColors[dist.level] || levelColors.beginner;
               const bars = [
-                { label: 'Direct', pct: dist.direct_application_pct || 0, color: 'bg-blue-400' },
-                { label: 'Rule-based', pct: dist.rule_based_pct || 0, color: 'bg-amber-400' },
-                { label: 'Transform', pct: dist.transformation_pct || 0, color: 'bg-purple-400' },
-                { label: 'Reduction', pct: dist.reduction_pct || 0, color: 'bg-rose-400' },
-                { label: 'Optimize', pct: dist.optimization_pct || 0, color: 'bg-emerald-400' },
+                { label: 'Direct', pct: dist.direct_application_pct || 0, color: 'bg-gray-300' },
+                { label: 'Rule-based', pct: dist.rule_based_pct || 0, color: 'bg-gray-400' },
+                { label: 'Transform', pct: dist.transformation_pct || 0, color: 'bg-blue-300' },
+                { label: 'Reduction', pct: dist.reduction_pct || 0, color: 'bg-blue-400' },
+                { label: 'Optimize', pct: dist.optimization_pct || 0, color: 'bg-blue-500' },
               ].filter(b => b.pct > 0);
               return (
-                <div key={i} className={`rounded-lg border p-4 ${colors.bg} ${colors.border}`}>
-                  <span className={`text-sm font-semibold ${colors.text}`}>
+                <div key={i} className={`p-6 rounded-2xl ${colors.card}`}>
+                  <span className={`text-lg font-display font-bold ${colors.text} block mb-4`}>
                     {dist.level.charAt(0).toUpperCase() + dist.level.slice(1)}
                   </span>
-                  <div className="mt-3 space-y-2">
+                  <div className="space-y-4">
                     {bars.map((bar, j) => (
-                      <div key={j}>
-                        <div className="flex justify-between text-xs text-gray-600 mb-0.5">
-                          <span>{bar.label}</span>
-                          <span>{bar.pct}%</span>
+                      <div key={j} className="flex flex-col gap-1">
+                        <div className="flex justify-between items-center text-sm">
+                           <span className="text-gray-600 font-medium">{bar.label}</span>
+                           <span className="font-bold text-gray-900 text-right">{bar.pct}%</span>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className={`h-2 rounded-full ${bar.color}`} style={{ width: `${bar.pct}%` }} />
+                        <div className="w-full bg-gray-100 border border-gray-200 rounded-full h-2.5 overflow-hidden">
+                          <div className={`h-full rounded-full ${bar.color}`} style={{ width: `${bar.pct}%` }} />
                         </div>
                       </div>
                     ))}
-                    {bars.length === 0 && (
-                      <p className="text-xs text-gray-400 italic">No strategy data</p>
-                    )}
                   </div>
                   {dist.strategies_used && dist.strategies_used.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-3">
+                    <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-200">
                       {dist.strategies_used.map((tag, j) => (
-                        <span key={j} className={`px-2 py-0.5 text-xs rounded-full ${strategyColors[tag] || 'bg-gray-100 text-gray-700'}`}>
+                        <span key={j} className={`clean-tag ${strategyColors[tag] || 'bg-gray-100 text-gray-700'}`}>
                           {tag.replace(/_/g, ' ')}
                         </span>
                       ))}
@@ -305,156 +300,43 @@ function ThinkingSimulationResults({ results }) {
 
       {/* Structural Comparison */}
       {structural_comparison && Object.keys(structural_comparison).length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span>🔬</span>
+        <div className="clean-card p-6 sm:p-8 bg-gray-50">
+          <h3 className="text-xl font-display font-bold text-gray-900 mb-6 flex items-center gap-3">
+            <span className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl border border-blue-100">🔬</span>
             Structural Comparison
           </h3>
 
-          {/* Graph Shape */}
-          {structural_comparison.graph_shape && Object.keys(structural_comparison.graph_shape).length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Graph Shape</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {Object.entries(structural_comparison.graph_shape).map(([level, data]) => {
-                  const colors = levelColors[level] || levelColors.beginner;
-                  return (
-                    <div key={level} className={`rounded-lg border p-3 ${colors.bg} ${colors.border}`}>
-                      <span className={`text-sm font-medium ${colors.text}`}>
-                        {level.charAt(0).toUpperCase() + level.slice(1)}
-                      </span>
-                      <div className="mt-2 space-y-1">
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Nodes:</span> {data.node_count}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Edges:</span> {data.edge_count}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Depth:</span> {data.depth}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Approach:</span>{' '}
-                          {data.is_linear ? 'Linear' : 'Transformed'}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Abstraction Flow */}
-          {structural_comparison.abstraction_flow && Object.keys(structural_comparison.abstraction_flow).length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Abstraction Flow</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {Object.entries(structural_comparison.abstraction_flow).map(([level, data]) => {
-                  const colors = levelColors[level] || levelColors.beginner;
-                  const flow = data.flow || [];
-                  return (
-                    <div key={level} className={`rounded-lg border p-3 ${colors.bg} ${colors.border}`}>
-                      <span className={`text-sm font-medium ${colors.text}`}>
-                        {level.charAt(0).toUpperCase() + level.slice(1)}
-                      </span>
-                      <div className="mt-2 space-y-1">
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Avg:</span> {data.average_abstraction}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Max:</span>{' '}
-                          <span className={`px-1.5 py-0.5 rounded ${(abstractionColors[data.max_abstraction] || abstractionColors.LOW).bg} ${(abstractionColors[data.max_abstraction] || abstractionColors.LOW).text}`}>
-                            {data.max_abstraction}
-                          </span>
-                        </div>
-                        {flow.length > 0 && (
-                          <div className="flex gap-1 mt-1 flex-wrap">
-                            {flow.map((lvl, k) => (
-                              <span key={k} className={`text-xs px-1.5 py-0.5 rounded ${(abstractionColors[lvl] || abstractionColors.LOW).bg} ${(abstractionColors[lvl] || abstractionColors.LOW).text}`}>
-                                {lvl}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Key Differences */}
-          {structural_comparison.key_differences && structural_comparison.key_differences.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Key Structural Differences</h4>
-              <div className="space-y-2">
-                {structural_comparison.key_differences.map((diff, i) => (
-                  <div key={i} className="p-3 bg-gray-50 rounded-lg text-sm text-gray-700 flex items-start gap-2">
-                    <span className="font-bold text-indigo-500 mt-0.5">→</span>
-                    <span>{diff}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Student Graph */}
-      {hasStudentGraph && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span>👤</span>
-            Student Reasoning Graph
-          </h3>
-          <div className="space-y-4">
-            {/* Level match */}
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600">Your reasoning matches:</span>
-              <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
-                (levelColors[student_graph.student_level_match] || levelColors.beginner).badge
-              }`}>
-                {student_graph.student_level_match.charAt(0).toUpperCase() +
-                 student_graph.student_level_match.slice(1)} Level
-              </span>
-            </div>
-
-            {/* Student nodes visualization */}
-            {student_graph.nodes && student_graph.nodes.length > 0 && (
+          <div className="space-y-8">
+            {/* Graph Shape */}
+            {structural_comparison.graph_shape && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Your Reasoning Steps</h4>
-                <div className="space-y-2">
-                  {student_graph.nodes.map((node, j) => {
-                    const absColor = abstractionColors[node.abstraction_level] || abstractionColors.LOW;
-                    const stratColor = strategyColors[node.strategy_type] || 'bg-gray-100 text-gray-700';
-                    const outEdge = (student_graph.edges || []).find(e => e.from_step_id === node.step_id);
+                <h4 className="text-sm font-display font-bold uppercase tracking-wider text-gray-500 mb-4 ml-2">Graph Shape</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {Object.entries(structural_comparison.graph_shape).map(([level, data]) => {
+                    const colors = levelColors[level] || levelColors.beginner;
                     return (
-                      <div key={j}>
-                        <div className={`bg-gray-50 rounded-lg p-3 border ${absColor.border}`}>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <div className="w-5 h-5 rounded-full bg-gray-500 text-white text-xs flex items-center justify-center font-bold shrink-0">
-                              {j + 1}
-                            </div>
-                            <span className="text-sm font-medium text-gray-900">
-                              {node.operation_type.replace(/_/g, ' ')}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${absColor.bg} ${absColor.text}`}>
-                              {node.abstraction_level}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${stratColor}`}>
-                              {node.strategy_type.replace(/_/g, ' ')}
-                            </span>
+                      <div key={level} className={`p-5 rounded-2xl ${colors.card}`}>
+                        <span className={`text-base font-display font-bold ${colors.text} block mb-3`}>
+                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                        </span>
+                        <div className="grid grid-cols-2 gap-2 text-sm font-medium">
+                          <div className="bg-white border border-gray-100 p-2 rounded-xl text-center">
+                            <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Nodes</span>
+                            <span className="text-lg font-bold text-gray-800">{data.node_count}</span>
+                          </div>
+                          <div className="bg-white border border-gray-100 p-2 rounded-xl text-center">
+                            <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Edges</span>
+                            <span className="text-lg font-bold text-gray-800">{data.edge_count}</span>
+                          </div>
+                          <div className="bg-white border border-gray-100 p-2 rounded-xl text-center">
+                            <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Depth</span>
+                            <span className="text-lg font-bold text-gray-800">{data.depth}</span>
+                          </div>
+                          <div className="bg-white border border-gray-100 p-2 rounded-xl text-center flex flex-col items-center justify-center">
+                            <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Shape</span>
+                            <span className="text-sm font-bold text-gray-800">{data.is_linear ? 'Linear' : 'Branched'}</span>
                           </div>
                         </div>
-                        {outEdge && (
-                          <div className="flex items-center justify-center py-0.5">
-                            <span className="text-xs text-gray-400 font-mono">
-                              {relationIcons[outEdge.relation_type] || '→'}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -462,66 +344,46 @@ function ThinkingSimulationResults({ results }) {
               </div>
             )}
 
-            {/* Student abstraction metrics */}
-            {student_graph.abstraction_metrics && (
-              <div className="flex gap-4 text-xs text-gray-600">
-                <span><span className="font-medium">Avg Abstraction:</span> {student_graph.abstraction_metrics.average_abstraction}</span>
-                <span><span className="font-medium">Max:</span> {student_graph.abstraction_metrics.max_abstraction}</span>
-              </div>
-            )}
-
-            {/* Missing nodes */}
-            {student_graph.missing_nodes && student_graph.missing_nodes.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Missing Nodes</h4>
-                <div className="space-y-1">
-                  {student_graph.missing_nodes.map((step, j) => (
-                    <div key={j} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-                      ⚠️ {step}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Missing transformations */}
-            {student_graph.missing_transformations && student_graph.missing_transformations.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Missing Transformations</h4>
-                <div className="flex flex-wrap gap-2">
-                  {student_graph.missing_transformations.map((t, j) => (
-                    <span key={j} className="px-2 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-full">
-                      {t.replace(/_/g, ' ')}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Unnecessary steps */}
-            {student_graph.unnecessary_steps && student_graph.unnecessary_steps.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Unnecessary Steps</h4>
-                <div className="space-y-1">
-                  {student_graph.unnecessary_steps.map((ineff, j) => (
-                    <div key={j} className="p-2 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
-                      {ineff}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Abstraction mismatches */}
-            {student_graph.abstraction_mismatches && student_graph.abstraction_mismatches.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Abstraction Mismatches</h4>
-                <div className="space-y-1">
-                  {student_graph.abstraction_mismatches.map((gap, j) => (
-                    <div key={j} className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-800">
-                      🔴 {gap}
-                    </div>
-                  ))}
+            {/* Abstraction Flow */}
+            {structural_comparison.abstraction_flow && (
+              <div className="pt-8 border-t border-gray-200">
+                <h4 className="text-sm font-display font-bold uppercase tracking-wider text-gray-500 mb-4 ml-2">Abstraction Flow</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {Object.entries(structural_comparison.abstraction_flow).map(([level, data]) => {
+                    const colors = levelColors[level] || levelColors.beginner;
+                    const flow = data.flow || [];
+                    return (
+                      <div key={level} className={`p-5 rounded-2xl ${colors.card}`}>
+                        <span className={`text-base font-display font-bold ${colors.text} block mb-3`}>
+                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                        </span>
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="bg-white border border-gray-100 px-3 py-2 rounded-xl flex items-center gap-2">
+                             <span className="text-xs uppercase tracking-wider text-gray-500">Avg</span>
+                             <span className="font-bold text-gray-800">{data.average_abstraction}</span>
+                          </div>
+                          <div className="bg-white border border-gray-100 px-3 py-2 rounded-xl flex items-center gap-2">
+                             <span className="text-xs uppercase tracking-wider text-gray-500">Max</span>
+                             <span className={`clean-tag ${(abstractionColors[data.max_abstraction] || abstractionColors.LOW).badge}`}>
+                               {data.max_abstraction}
+                             </span>
+                          </div>
+                        </div>
+                        {flow.length > 0 && (
+                          <div className="bg-white border border-gray-100 p-3 rounded-xl flex flex-col gap-1.5 font-bold text-xs uppercase tracking-wider text-gray-600">
+                             Flow Sequence:
+                             <div className="flex gap-1.5 flex-wrap">
+                              {flow.map((lvl, k) => (
+                                <span key={k} className={`clean-tag ${(abstractionColors[lvl] || abstractionColors.LOW).badge}`}>
+                                  {lvl}
+                                </span>
+                              ))}
+                             </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -531,26 +393,28 @@ function ThinkingSimulationResults({ results }) {
 
       {/* Gap Analysis */}
       {gap_analysis.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span>🔍</span>
+        <div className="clean-card p-6 sm:p-8 bg-gray-50">
+          <h3 className="text-xl font-display font-bold text-gray-900 mb-6 flex items-center gap-3">
+            <span className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl border border-blue-100">🔍</span>
             Structural Gap Analysis
           </h3>
-          <div className="space-y-2">
-            {gap_analysis.map((gap, i) => {
-              const config = severityConfig[gap.severity] || severityConfig.info;
-              const sourceLabel = gap.source ? ` [${gap.source}]` : '';
-              return (
-                <div
-                  key={i}
-                  className={`p-3 rounded-lg border text-sm ${config.bg} ${config.border} ${config.text}`}
-                >
-                  <span className="mr-2">{config.icon}</span>
-                  {gap.insight}
-                  <span className="text-xs opacity-60 ml-2">{sourceLabel}</span>
-                </div>
-              );
-            })}
+          <div className="space-y-4">
+             {gap_analysis.map((gap, i) => {
+               const config = severityConfig[gap.severity] || severityConfig.info;
+               return (
+                 <div key={i} className={`p-5 flex items-start gap-4 rounded-xl ${config.card}`}>
+                   <span className="text-2xl mt-1 drop-shadow-sm">{config.icon}</span>
+                   <div>
+                     <p className={`text-base font-body font-medium ${config.text} leading-relaxed`}>{gap.insight}</p>
+                     {gap.source && (
+                       <span className={`inline-block mt-2 clean-tag bg-white border border-gray-200 ${config.text}`}>
+                         Source: {gap.source}
+                       </span>
+                     )}
+                   </div>
+                 </div>
+               );
+             })}
           </div>
         </div>
       )}

@@ -97,6 +97,7 @@ if settings.LLM_API_KEY:
         else:
             from openai import OpenAI
             llm_client = OpenAI(api_key=settings.LLM_API_KEY)
+            print("LLM CLIENT:", llm_client)
     except ImportError:
         pass
 

@@ -1,1 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Comic+Neue:wght@300;400;700&family=Nunito+Sans:wght@300;400;500;600;700&family=Varela+Round&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --color-brand-bg: #F5F5F4;
+  --color-brand-surface: #FFFFFF;
+  --color-brand-text: #1F2937;
+  --color-brand-text-muted: #6B7280;
+  
+  --color-brand-primary: #22C55E;
+  
+  --color-accent-blue: #60A5FA;
+  --color-accent-pink: #FCA5A5;
+  --color-accent-purple: #C4B5FD;
+  --color-accent-orange: #FDBA74;
+
+  --color-brand-border: #E5E7EB;
+
+  --font-display: 'Varela Round', sans-serif;
+  --font-body: 'Nunito Sans', sans-serif;
+  
+  /* Subtle outer shadows, NO INSETS */
+  --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-soft-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+  --shadow-soft-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+}
+
+@layer base {
+  body {
+    @apply bg-[var(--color-brand-bg)] text-[var(--color-brand-text)] font-body;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight text-[var(--color-brand-text)];
+  }
+}
+
+@layer utilities {
+  /* Cards */
+  .clean-card {
+    @apply bg-[var(--color-brand-surface)] rounded-2xl border border-[var(--color-brand-border)] transition-all duration-200 overflow-hidden;
+    box-shadow: var(--shadow-soft);
+  }
+  .clean-card:hover {
+    box-shadow: var(--shadow-soft-md);
+  }
+
+  /* Structural Panel */
+  .clean-panel {
+    @apply bg-[var(--color-brand-bg)] rounded-3xl p-6 sm:p-8;
+  }
+
+  /* Buttons */
+  .clean-btn {
+    @apply bg-white border border-[var(--color-brand-border)] text-[var(--color-brand-text)] rounded-xl px-5 py-2.5 font-display font-medium transition-all duration-200 cursor-pointer flex items-center justify-center gap-2;
+    box-shadow: var(--shadow-soft);
+  }
+  .clean-btn:hover {
+    @apply bg-gray-50;
+    box-shadow: var(--shadow-soft-md);
+    transform: translateY(-1px);
+  }
+  .clean-btn:active {
+    @apply bg-gray-100;
+    box-shadow: var(--shadow-soft);
+    transform: translateY(1px);
+  }
+
+  /* Primary CTA */
+  .clean-btn-primary {
+    @apply bg-[var(--color-brand-primary)] text-white rounded-xl px-6 py-3 font-display font-bold text-lg transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 border border-transparent;
+    box-shadow: var(--shadow-soft);
+  }
+  .clean-btn-primary:hover {
+    box-shadow: 0 10px 15px -3px rgba(34, 197, 94, 0.2), 0 4px 6px -2px rgba(34, 197, 94, 0.1);
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+  }
+  .clean-btn-primary:active {
+    box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.2);
+    transform: translateY(1px);
+  }
+  
+  .clean-btn-primary:disabled {
+    @apply bg-gray-300 text-gray-500 cursor-not-allowed shadow-none border border-gray-200;
+    filter: none;
+    transform: none;
+  }
+
+  /* Inputs */
+  .clean-input {
+    @apply bg-[var(--color-brand-surface)] rounded-xl px-5 py-3 font-body text-base border border-[var(--color-brand-border)] focus:outline-none transition-all duration-200 w-full text-[var(--color-brand-text)];
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  }
+  .clean-input:focus {
+    @apply border-[var(--color-brand-primary)] ring-2 ring-[var(--color-brand-primary)]/20;
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  }
+  .clean-input::placeholder {
+    @apply text-[var(--color-brand-text-muted)];
+  }
+
+  /* Tags */
+  .clean-tag {
+    @apply bg-gray-100 border border-[var(--color-brand-border)] text-gray-700 rounded-lg px-3 py-1 font-display text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5 transition-colors duration-200;
+  }
+}

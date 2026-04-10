@@ -30,14 +30,16 @@ function ThinkingSimulationWorkspace() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 w-full max-w-5xl mx-auto">
       {/* Input Form */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-2xl">🧠</span>
-          <h2 className="text-lg font-semibold text-gray-900">Thinking Simulation Engine</h2>
+      <div className="clean-card p-6 sm:p-8">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-xl border border-blue-100">
+            🧠
+          </div>
+          <h2 className="text-xl font-display font-bold text-gray-900 tracking-wide">Thinking Simulation Engine</h2>
         </div>
-        <p className="text-sm text-gray-500 mb-6">
+        <p className="text-base font-body font-medium text-gray-600 mb-8 max-w-3xl">
           Graph-based cognitive reasoning simulator. Generates structured reasoning graphs
           (nodes + edges + decisions) for three cognitive levels with strict constraint enforcement.
           Compares graph shape, strategy distribution, and abstraction flow — not surface-level text.
@@ -45,64 +47,64 @@ function ThinkingSimulationWorkspace() {
         </p>
 
         {/* Problem (mandatory) */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="mb-6">
+          <label className="block text-sm font-display font-bold uppercase tracking-wider text-gray-700 mb-2">
             Problem / Question <span className="text-red-500">*</span>
           </label>
           <textarea
             value={problem}
             onChange={(e) => setProblem(e.target.value)}
             placeholder="Enter the problem, question, or concept to simulate reasoning for..."
-            rows={4}
-            className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y"
+            rows={3}
+            className="clean-input resize-y"
             disabled={processing}
           />
         </div>
 
         {/* Student Answer (optional) */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Student Answer / Reasoning <span className="text-gray-400 font-normal">(optional)</span>
+        <div className="mb-8">
+          <label className="block text-sm font-display font-bold uppercase tracking-wider text-gray-700 mb-2">
+            Student Answer / Reasoning <span className="text-gray-400 font-medium normal-case">(optional)</span>
           </label>
           <textarea
             value={studentAnswer}
             onChange={(e) => setStudentAnswer(e.target.value)}
             placeholder="Enter the student's reasoning to compare against simulated thinking levels..."
-            rows={4}
-            className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y"
+            rows={3}
+            className="clean-input resize-y"
             disabled={processing}
           />
-          <p className="text-xs text-gray-400 mt-1">
-            If provided, the system will compare the student's reasoning against all three cognitive levels and identify gaps.
+          <p className="text-sm font-medium text-gray-500 mt-3 inline-flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+            <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            System will compare student's reasoning against all three cognitive levels to identify gaps.
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="mb-6 bg-red-50 rounded-xl border border-red-100 p-4 text-sm font-medium text-red-800 flex items-center gap-3">
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             {error}
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-2">
           <button
             onClick={handleSubmit}
             disabled={processing || !problem.trim()}
-            className={`px-6 py-2.5 rounded-lg text-sm font-medium text-white transition-colors ${
-              processing || !problem.trim()
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-indigo-600 hover:bg-indigo-700'
-            }`}
+            className="clean-btn-primary"
           >
             {processing ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
                 Simulating Thinking...
-              </span>
+              </>
             ) : (
-              '🧠 Simulate Thinking'
+              <>
+                <span>🧠</span> Simulate Thinking
+              </>
             )}
           </button>
         </div>
