@@ -2,6 +2,10 @@
 
 import uuid
 
+from ..logging_config import get_logger
+
+_log = get_logger("data_layer.chunker")
+
 
 class TextChunker:
     """Splits document text into semantic chunks while preserving page mapping."""
@@ -17,15 +21,8 @@ class TextChunker:
         self.chunk_overlap = chunk_overlap
 
     def chunk_pages(self, pages: list[dict], document_id: str) -> list[dict]:
-        """Split pages into chunks preserving page mapping.
-
-        Args:
-            pages: List of dicts with 'page_number' and 'text'.
-            document_id: ID of the source document.
-
-        Returns:
-            List of chunk dicts with chunk_id, chunk_text, page_number, document_id.
-        """
+        """Split pages into chunks preserving page mapping."""
+        _log.info(f"Chunking {len(pages)} pages for document_id={document_id}")
         chunks = []
         for page in pages:
             page_chunks = self._split_text(page["text"])
@@ -36,6 +33,7 @@ class TextChunker:
                     "page_number": page["page_number"],
                     "document_id": document_id,
                 })
+        _log.info(f"Produced {len(chunks)} chunks")
         return chunks
 
     def _split_text(self, text: str) -> list[str]:

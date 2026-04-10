@@ -12,6 +12,10 @@ Supported providers:
 import os
 from typing import Optional
 
+from ..logging_config import get_logger
+
+_log = get_logger("data_layer.embedding_service")
+
 
 class EmbeddingService:
     """Generates embeddings using the LLM API.
@@ -47,21 +51,27 @@ class EmbeddingService:
             RuntimeError: If embedding generation fails.
         """
         if not texts:
+            _log.debug("embed_texts called with empty list")
             return []
 
         if not self._llm_client:
+            _log.error("No LLM client available for embedding generation")
             raise RuntimeError(
                 "Embedding generation requires an LLM client. "
                 "Set LLM_API_KEY environment variable."
             )
 
+        _log.info(f"Generating embeddings for {len(texts)} texts using model={self._model}")
         try:
             response = self._llm_client.embeddings.create(
                 model=self._model,
                 input=texts,
             )
-            return [item.embedding for item in response.data]
+            embeddings = [item.embedding for item in response.data]
+            _log.info(f"Successfully generated {len(embeddings)} embeddings")
+            return embeddings
         except Exception as e:
+            _log.error(f"Embedding generation failed: {e}")
             raise RuntimeError(f"Embedding generation failed: {e}")
 
     def embed_query(self, query_text: str) -> list[float]:
@@ -76,5 +86,6 @@ class EmbeddingService:
         Raises:
             RuntimeError: If embedding generation fails.
         """
+        _log.debug(f"Embedding single query: {query_text[:50]}...")
         embeddings = self.embed_texts([query_text])
         return embeddings[0]

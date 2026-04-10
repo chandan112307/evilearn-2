@@ -7,6 +7,10 @@ from datetime import datetime
 from typing import Optional
 from contextlib import contextmanager
 
+from ..logging_config import get_logger
+
+_log = get_logger("data_layer.database")
+
 
 class Database:
     """Manages SQLite storage for documents, chunks, claims, results, feedback, and history."""
@@ -106,14 +110,17 @@ class Database:
 
     def insert_document(self, document_id: str, file_name: str, page_count: int = 0) -> None:
         """Insert a new document record."""
+        _log.state(f"Store: inserting document record document_id={document_id}, file_name={file_name}")
         with self._get_connection() as conn:
             conn.execute(
                 "INSERT INTO documents (document_id, file_name, upload_time, status, page_count) VALUES (?, ?, ?, ?, ?)",
                 (document_id, file_name, datetime.utcnow().isoformat(), "processing", page_count),
             )
+        _log.debug(f"Document record inserted: {document_id}")
 
     def update_document_status(self, document_id: str, status: str) -> None:
         """Update document processing status."""
+        _log.state(f"Store: updating document status document_id={document_id}, status={status}")
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE documents SET status = ? WHERE document_id = ?",
@@ -122,31 +129,40 @@ class Database:
 
     def get_documents(self) -> list[dict]:
         """Get all documents."""
+        _log.state("Fetch: retrieving all documents")
         with self._get_connection() as conn:
             rows = conn.execute("SELECT * FROM documents ORDER BY upload_time DESC").fetchall()
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+            _log.debug(f"Fetched {len(result)} documents")
+            return result
 
     def get_document(self, document_id: str) -> Optional[dict]:
         """Get a specific document."""
+        _log.state(f"Fetch: retrieving document document_id={document_id}")
         with self._get_connection() as conn:
             row = conn.execute("SELECT * FROM documents WHERE document_id = ?", (document_id,)).fetchone()
+            found = row is not None
+            _log.debug(f"Document {'found' if found else 'not found'}: {document_id}")
             return dict(row) if row else None
 
     # --- Chunk Operations ---
 
     def insert_chunks(self, chunks: list[dict]) -> None:
         """Insert multiple chunks."""
+        _log.state(f"Store: inserting {len(chunks)} chunks")
         with self._get_connection() as conn:
             conn.executemany(
                 "INSERT INTO chunks (chunk_id, document_id, chunk_text, page_number) VALUES (?, ?, ?, ?)",
                 [(c["chunk_id"], c["document_id"], c["chunk_text"], c["page_number"]) for c in chunks],
             )
+        _log.debug(f"Inserted {len(chunks)} chunks")
 
     # --- Session Operations ---
 
     def create_session(self, input_text: str, input_type: str = "answer") -> str:
         """Create a new session and return its ID."""
         session_id = str(uuid.uuid4())
+        _log.state(f"Store: creating session session_id={session_id}, input_type={input_type}")
         with self._get_connection() as conn:
             conn.execute(
                 "INSERT INTO sessions (session_id, input_text, input_type, created_at) VALUES (?, ?, ?, ?)",
@@ -156,12 +172,16 @@ class Database:
 
     def get_sessions(self) -> list[dict]:
         """Get all sessions ordered by creation time."""
+        _log.state("Fetch: retrieving all sessions")
         with self._get_connection() as conn:
             rows = conn.execute("SELECT * FROM sessions ORDER BY created_at DESC").fetchall()
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+            _log.debug(f"Fetched {len(result)} sessions")
+            return result
 
     def get_session(self, session_id: str) -> Optional[dict]:
         """Get a specific session."""
+        _log.state(f"Fetch: retrieving session session_id={session_id}")
         with self._get_connection() as conn:
             row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
             return dict(row) if row else None

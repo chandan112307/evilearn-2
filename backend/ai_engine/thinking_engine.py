@@ -20,9 +20,14 @@ import os
 import json
 import re
 import uuid
+import time
 from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, START, END
+
+from ..logging_config import get_logger
+
+_log = get_logger("ai_engine.thinking_engine")
 
 
 # ---------------------------------------------------------------------------
@@ -79,21 +84,28 @@ class ThinkingState(TypedDict):
 def _llm_call(llm_client, prompt: str, max_tokens: int = 2048) -> str:
     """Make a single LLM call. Returns empty string on failure."""
     if not llm_client:
+        _log.warning("No LLM client available — skipping LLM call")
         return ""
+    model = os.environ.get("LLM_MODEL", "llama3-8b-8192")
+    _log.llm(f"Model: {model}")
+    _log.llm(f"[LLM PROMPT]\n{prompt[:500]}...")
+    start = time.perf_counter()
     try:
         response = llm_client.chat.completions.create(
-            model=os.environ.get("LLM_MODEL", "llama3-8b-8192"),
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_completion_tokens=max_tokens,
         )
-        print("RAW LLM RESPONSE: ", response)
-        # return response.choices[0].message.content.strip()
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _log.perf(f"LLM call completed in {elapsed_ms:.1f}ms")
         content = response.choices[0].message.content
-        print("\n===== RAW LLM TEXT =====\n", content, "\n========================\n")
-        return content.strip()
+        _log.llm(f"[LLM RESPONSE]\n{content[:500] if content else '(empty)'}...")
+        return content.strip() if content else ""
     except Exception as e:
-        print("❌ LLM Error", str(e))
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _log.error(f"LLM call failed after {elapsed_ms:.1f}ms: {e}")
+        _log.llm("[LLM FALLBACK] triggered — LLM call raised exception")
         return ""
 
 
@@ -105,9 +117,12 @@ def _parse_json(text: str, fallback=None):
         match = re.search(pattern, text, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group())
+                parsed = json.loads(match.group())
+                _log.llm(f"[LLM PARSED] JSON parsed successfully ({type(parsed).__name__})")
+                return parsed
             except (json.JSONDecodeError, ValueError):
                 continue
+    _log.warning("No valid JSON found in LLM response")
     return fallback
 
 
@@ -1380,20 +1395,13 @@ class ThinkingSimulationEngine:
         self.graph = build_thinking_simulation_graph()
 
     def simulate(self, problem: str, student_answer: str = "") -> dict:
-        """Execute the thinking simulation pipeline.
+        """Execute the thinking simulation pipeline."""
+        _log.flow("=== Thinking Simulation START ===")
+        _log.state(f"Input: problem_length={len(problem)}, student_answer={'yes' if student_answer else 'no'}")
+        start_time = time.perf_counter()
 
-        Args:
-            problem: The problem or question to simulate reasoning for.
-            student_answer: Optional student answer to compare against.
-
-        Returns:
-            Dict with reasoning graphs, strategy distributions, structural
-            comparison, student graph, and gap analysis.
-
-        Raises:
-            ValueError: If problem is empty.
-        """
         if not problem or not problem.strip():
+            _log.error("Empty problem text provided")
             raise ValueError("Problem text is empty.")
 
         initial_state: ThinkingState = {
@@ -1412,6 +1420,12 @@ class ThinkingSimulationEngine:
         }
 
         final_state = self.graph.invoke(initial_state)
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        _log.perf(f"Thinking simulation completed in {elapsed_ms:.1f}ms")
+        _log.state(f"Output: graphs={len(final_state.get('reasoning_graphs', []))}, "
+                   f"gaps={len(final_state.get('gap_analysis', []))}")
+        _log.flow("=== Thinking Simulation END ===")
 
         return {
             "cognitive_profiles": final_state.get("cognitive_profiles", []),

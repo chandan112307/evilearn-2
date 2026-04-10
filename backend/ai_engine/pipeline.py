@@ -22,6 +22,7 @@ import os
 import json
 import re
 import uuid
+import time
 from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, START, END
@@ -33,7 +34,10 @@ from ..schemas import (
     VerificationResult,
     FinalClaimResult,
 )
+from ..logging_config import get_logger
 from .stress_test_agent import run_stress_test
+
+_log = get_logger("ai_engine.pipeline")
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +83,9 @@ def planner_node(state: PipelineState) -> dict:
     Reads: raw_input
     Writes: input_type, pipeline_decision
     """
+    _log.flow("Enter Node: planner")
     raw_input = state["raw_input"]
+    _log.state(f"Input: raw_input length={len(raw_input)} chars")
     if not raw_input or not raw_input.strip():
         raise ValueError("Input text is empty.")
 
@@ -120,6 +126,8 @@ def planner_node(state: PipelineState) -> dict:
     if input_type is None:
         input_type = "answer"
 
+    _log.state(f"Output: input_type={input_type}, pipeline_decision=validation")
+    _log.flow("Exit Node: planner")
     return {
         "input_type": input_type,
         "pipeline_decision": "validation",
@@ -139,9 +147,11 @@ def claim_extractor_node(state: PipelineState) -> dict:
     Reads: raw_input, input_type, _llm_client
     Writes: claims (list of ClaimItem dicts)
     """
+    _log.flow("Enter Node: claim_extractor")
     text = state["raw_input"].strip()
     input_type = state["input_type"]
     llm_client = state.get("_llm_client")
+    _log.state(f"Input: text_length={len(text)}, input_type={input_type}")
 
     if not text:
         return {"claims": []}
@@ -223,9 +233,11 @@ def retriever_node(state: PipelineState) -> dict:
     Reads: claims, _vector_store, _embedding_service
     Writes: evidence_map (claim_id → list of EvidenceChunk dicts)
     """
+    _log.flow("Enter Node: retriever")
     vector_store = state.get("_vector_store")
     embedding_service = state.get("_embedding_service")
     claims = state["claims"]
+    _log.state(f"Input: {len(claims)} claims to retrieve evidence for")
     evidence_map: dict = {}
 
     for claim in claims:
@@ -282,8 +294,10 @@ def verifier_node(state: PipelineState) -> dict:
     Reads: claims, evidence_map
     Writes: verification_results (list of VerificationResult dicts)
     """
+    _log.flow("Enter Node: verifier")
     claims = state["claims"]
     evidence_map = state["evidence_map"]
+    _log.state(f"Input: {len(claims)} claims to verify")
     results: list[dict] = []
 
     for claim in claims:
@@ -383,8 +397,10 @@ def explainer_node(state: PipelineState) -> dict:
     Reads: verification_results, _llm_client
     Writes: final_results (list of FinalClaimResult dicts)
     """
+    _log.flow("Enter Node: explainer")
     llm_client = state.get("_llm_client")
     verification_results = state["verification_results"]
+    _log.state(f"Input: {len(verification_results)} verification results")
     final_results: list[dict] = []
 
     for result in verification_results:
@@ -403,6 +419,8 @@ def explainer_node(state: PipelineState) -> dict:
         )
         final_results.append(fcr.model_dump())
 
+    _log.state(f"Output: {len(final_results)} final results")
+    _log.flow("Exit Node: explainer")
     return {"final_results": final_results}
 
 
@@ -552,20 +570,13 @@ class ValidationPipeline:
         self.graph = build_validation_graph()
 
     def execute(self, raw_input: str) -> dict:
-        """Execute the LangGraph validation pipeline.
+        """Execute the LangGraph validation pipeline."""
+        _log.flow("=== Validation Pipeline START ===")
+        _log.state(f"Input: raw_input length={len(raw_input)} chars")
+        start_time = time.perf_counter()
 
-        Args:
-            raw_input: User's input text.
-
-        Returns:
-            Dict with input_type and structured claim results.
-            All claim data is validated via FinalClaimResult before return.
-
-        Raises:
-            ValueError: If input is invalid.
-            RuntimeError: If a pipeline stage fails.
-        """
         if not raw_input or not raw_input.strip():
+            _log.error("Empty input text provided")
             raise ValueError("Input text is empty.")
 
         initial_state: PipelineState = {
@@ -589,6 +600,9 @@ class ValidationPipeline:
 
         claims = final_state.get("final_results", [])
         if not claims:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            _log.perf(f"Validation pipeline completed in {elapsed_ms:.1f}ms (no claims)")
+            _log.flow("=== Validation Pipeline END ===")
             return {
                 "input_type": final_state.get("input_type", "answer"),
                 "claims": [],
@@ -601,6 +615,10 @@ class ValidationPipeline:
             validated = FinalClaimResult(**c)
             validated_claims.append(validated.model_dump())
 
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        _log.perf(f"Validation pipeline completed in {elapsed_ms:.1f}ms")
+        _log.state(f"Output: {len(validated_claims)} validated claims")
+        _log.flow("=== Validation Pipeline END ===")
         return {
             "input_type": final_state.get("input_type", "answer"),
             "claims": validated_claims,
