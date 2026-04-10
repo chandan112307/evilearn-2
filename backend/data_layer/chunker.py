@@ -21,7 +21,15 @@ class TextChunker:
         self.chunk_overlap = chunk_overlap
 
     def chunk_pages(self, pages: list[dict], document_id: str) -> list[dict]:
-        """Split pages into chunks preserving page mapping."""
+        """Split pages into chunks preserving page mapping.
+
+        Args:
+            pages: List of dicts with 'page_number' and 'text'.
+            document_id: ID of the source document.
+
+        Returns:
+            List of chunk dicts with chunk_id, chunk_text, page_number, document_id.
+        """
         _log.info(f"Chunking {len(pages)} pages for document_id={document_id}")
         chunks = []
         for page in pages:

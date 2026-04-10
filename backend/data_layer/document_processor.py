@@ -14,7 +14,17 @@ class DocumentProcessor:
 
     @staticmethod
     def extract_text_from_pdf(file_bytes: bytes) -> list[dict]:
-        """Extract text from PDF preserving page numbers."""
+        """Extract text from PDF preserving page numbers.
+
+        Args:
+            file_bytes: Raw PDF file bytes.
+
+        Returns:
+            List of dicts with 'page_number' and 'text' keys.
+
+        Raises:
+            ValueError: If PDF is corrupted or cannot be processed.
+        """
         _log.info(f"Extracting text from PDF ({len(file_bytes)} bytes)")
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")

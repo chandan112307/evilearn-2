@@ -570,7 +570,19 @@ class ValidationPipeline:
         self.graph = build_validation_graph()
 
     def execute(self, raw_input: str) -> dict:
-        """Execute the LangGraph validation pipeline."""
+        """Execute the LangGraph validation pipeline.
+
+        Args:
+            raw_input: User's input text.
+
+        Returns:
+            Dict with input_type and structured claim results.
+            All claim data is validated via FinalClaimResult before return.
+
+        Raises:
+            ValueError: If input is invalid.
+            RuntimeError: If a pipeline stage fails.
+        """
         _log.flow("=== Validation Pipeline START ===")
         _log.state(f"Input: raw_input length={len(raw_input)} chars")
         start_time = time.perf_counter()

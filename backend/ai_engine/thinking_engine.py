@@ -1395,7 +1395,19 @@ class ThinkingSimulationEngine:
         self.graph = build_thinking_simulation_graph()
 
     def simulate(self, problem: str, student_answer: str = "") -> dict:
-        """Execute the thinking simulation pipeline."""
+        """Execute the thinking simulation pipeline.
+
+        Args:
+            problem: The problem or question to simulate reasoning for.
+            student_answer: Optional student answer to compare against.
+
+        Returns:
+            Dict with reasoning graphs, strategy distributions, structural
+            comparison, student graph, and gap analysis.
+
+        Raises:
+            ValueError: If problem is empty.
+        """
         _log.flow("=== Thinking Simulation START ===")
         _log.state(f"Input: problem_length={len(problem)}, student_answer={'yes' if student_answer else 'no'}")
         start_time = time.perf_counter()
