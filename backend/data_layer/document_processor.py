@@ -4,6 +4,10 @@ import fitz  # PyMuPDF
 import uuid
 from typing import Optional
 
+from ..logging_config import get_logger
+
+_log = get_logger("data_layer.document_processor")
+
 
 class DocumentProcessor:
     """Processes uploaded documents and extracts text with page mapping."""
@@ -21,9 +25,11 @@ class DocumentProcessor:
         Raises:
             ValueError: If PDF is corrupted or cannot be processed.
         """
+        _log.info(f"Extracting text from PDF ({len(file_bytes)} bytes)")
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
         except Exception as e:
+            _log.error(f"Failed to open PDF: {e}")
             raise ValueError(f"Failed to open PDF: {e}")
 
         pages = []
@@ -38,8 +44,10 @@ class DocumentProcessor:
         doc.close()
 
         if not pages:
+            _log.warning("PDF contains no extractable text")
             raise ValueError("PDF contains no extractable text.")
 
+        _log.info(f"Extracted {len(pages)} pages from PDF")
         return pages
 
     @staticmethod

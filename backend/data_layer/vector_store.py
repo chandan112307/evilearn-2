@@ -12,6 +12,10 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from typing import Optional
 
+from ..logging_config import get_logger
+
+_log = get_logger("data_layer.vector_store")
+
 
 class VectorStore:
     """Manages vector storage and retrieval using ChromaDB.
@@ -67,6 +71,7 @@ class VectorStore:
             metadatas=metadatas,
             embeddings=embeddings,
         )
+        _log.state(f"Store: added {len(chunk_ids)} chunks to vector store")
 
     def query(
         self,
@@ -111,6 +116,7 @@ class VectorStore:
                     "document_id": metadata.get("document_id", ""),
                 })
 
+        _log.state(f"Fetch: query returned {len(evidence_list)} results (top_k={top_k})")
         return evidence_list
 
     def delete_document(self, document_id: str) -> None:
@@ -120,3 +126,4 @@ class VectorStore:
             document_id: ID of document to delete.
         """
         self.collection.delete(where={"document_id": document_id})
+        _log.state(f"Store: deleted chunks for document_id={document_id}")
